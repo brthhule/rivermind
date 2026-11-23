@@ -43,7 +43,8 @@ interface ChanceNode { k: 1; board: number[]; cards: number[]; children: TNode[]
 interface TermNode { k: 2; folder: -1 | 0 | 1; board: number[]; commit: [number, number] }
 type TNode = ActionNode | ChanceNode | TermNode;
 
-interface BoardData { str: [Int32Array, Int32Array]; sorted: [Int32Array, Int32Array] }
+// packed: per sorted position k, [idx, strength, c1, c2] at 4k..4k+3 (sequential access in sweeps)
+interface BoardData { str: [Int32Array, Int32Array]; sorted: [Int32Array, Int32Array]; packed: [Int32Array, Int32Array] }
 
 export interface NodeInfo {
   kind: 'action' | 'chance' | 'terminal';
@@ -234,10 +235,15 @@ export class Solver {
         valid.push(i);
       }
       valid.sort((x, y) => str[x] - str[y]);
-      return { str, sorted: Int32Array.from(valid) };
+      const packed = new Int32Array(valid.length * 4);
+      for (let k = 0; k < valid.length; k++) {
+        const i = valid[k];
+        packed[4 * k] = i; packed[4 * k + 1] = str[i]; packed[4 * k + 2] = hs[i].c1; packed[4 * k + 3] = hs[i].c2;
+      }
+      return { str, sorted: Int32Array.from(valid), packed };
     };
     const a = mk(0), c = mk(1);
-    d = { str: [a.str, c.str], sorted: [a.sorted, c.sorted] };
+    d = { str: [a.str, c.str], sorted: [a.sorted, c.sorted], packed: [a.packed, c.packed] };
     this.boardCache.set(key, d);
     return d;
   }
@@ -268,30 +274,31 @@ export class Solver {
   /** out[h] += scale * (wins - losses) for player p against opp reach (one 5-card board). */
   private sweep(bd: BoardData, p: 0 | 1, reachO: Float32Array, out: Float32Array, scale: number, loseOut?: Float32Array) {
     const q = (1 - p) as 0 | 1;
-    const hS = bd.sorted[p], oS = bd.sorted[q], hStr = bd.str[p], oStr = bd.str[q];
-    const hc1 = this.c1[p], hc2 = this.c2[p], oc1 = this.c1[q], oc2 = this.c2[q];
+    const H = bd.packed[p], O = bd.packed[q];
+    const hn = H.length, on = O.length;
     const cs = this.cs;
     cs.fill(0);
     let sum = 0, j = 0;
-    for (let i = 0; i < hS.length; i++) {
-      const h = hS[i], s = hStr[h];
-      while (j < oS.length && oStr[oS[j]] < s) {
-        const o = oS[j++], r = reachO[o];
-        if (r) { sum += r; cs[oc1[o]] += r; cs[oc2[o]] += r; }
+    for (let i = 0; i < hn; i += 4) {
+      const s = H[i + 1];
+      while (j < on && O[j + 1] < s) {
+        const r = reachO[O[j]];
+        if (r) { sum += r; cs[O[j + 2]] += r; cs[O[j + 3]] += r; }
+        j += 4;
       }
-      const w = sum - cs[hc1[h]] - cs[hc2[h]];
-      out[h] += scale * w;
+      out[H[i]] += scale * (sum - cs[H[i + 2]] - cs[H[i + 3]]);
     }
     cs.fill(0);
-    sum = 0; j = oS.length - 1;
-    for (let i = hS.length - 1; i >= 0; i--) {
-      const h = hS[i], s = hStr[h];
-      while (j >= 0 && oStr[oS[j]] > s) {
-        const o = oS[j--], r = reachO[o];
-        if (r) { sum += r; cs[oc1[o]] += r; cs[oc2[o]] += r; }
+    sum = 0; j = on - 4;
+    const lo = loseOut ?? out, ls = loseOut ? scale : -scale;
+    for (let i = hn - 4; i >= 0; i -= 4) {
+      const s = H[i + 1];
+      while (j >= 0 && O[j + 1] > s) {
+        const r = reachO[O[j]];
+        if (r) { sum += r; cs[O[j + 2]] += r; cs[O[j + 3]] += r; }
+        j -= 4;
       }
-      const l = sum - cs[hc1[h]] - cs[hc2[h]];
-      if (loseOut) loseOut[h] += scale * l; else out[h] -= scale * l;
+      lo[H[i]] += ls * (sum - cs[H[i + 2]] - cs[H[i + 3]]);
     }
   }
 
@@ -389,14 +396,24 @@ export class Solver {
   private strategyInto(node: ActionNode, avg: boolean, s: Float32Array) {
     const A = node.labels.length, n = node.n;
     if (node.locked) { s.set(node.locked); return s; }
+    const R = node.regret, S = node.ssum, u = 1 / A;
     for (let h = 0; h < n; h++) {
       // average strategy; hands never reached (own reach 0) fall back to the current regret-matching strategy
-      for (const src of avg ? [node.ssum, node.regret] : [node.regret]) {
+      if (avg) {
         let tot = 0;
-        for (let a = 0; a < A; a++) { const v = src[a * n + h]; if (v > 0) tot += v; }
-        if (tot > 0) { for (let a = 0; a < A; a++) { const v = src[a * n + h]; s[a * n + h] = v > 0 ? v / tot : 0; } break; }
-        for (let a = 0; a < A; a++) s[a * n + h] = 1 / A;
+        for (let i = h; i < A * n; i += n) { const v = S[i]; if (v > 0) tot += v; }
+        if (tot > 0) {
+          const k = 1 / tot;
+          for (let i = h; i < A * n; i += n) { const v = S[i]; s[i] = v > 0 ? v * k : 0; }
+          continue;
+        }
       }
+      let tot = 0;
+      for (let i = h; i < A * n; i += n) { const v = R[i]; if (v > 0) tot += v; }
+      if (tot > 0) {
+        const k = 1 / tot;
+        for (let i = h; i < A * n; i += n) { const v = R[i]; s[i] = v > 0 ? v * k : 0; }
+      } else for (let i = h; i < A * n; i += n) s[i] = u;
     }
     return s;
   }
@@ -412,6 +429,8 @@ export class Solver {
     return r;
   }
 
+  /** Discounted CFR parameters. */
+  params = { alpha: 1.5, beta: -Infinity, gamma: 3 };
   private dPos = 1; private dNeg = 0.5; private dStrat = 1;
 
   // per-depth scratch buffers (one node per depth is active at a time)
@@ -486,12 +505,49 @@ export class Solver {
     for (let a = 0; a < A; a++) {
       let any = false;
       for (let h = 0; h < m; h++) { const x = reachO[h] * sig[a * m + h]; ro[h] = x; if (x) any = true; }
-      if (!any && mode !== 0) continue;
+      if (!any) {
+        // Opponent never takes this action right now: values below are all zero, so skip the
+        // showdown work and only keep the traverser's average strategy up to date.
+        if (mode === 0) this.sumOnly(node.children[a], p, reachP, d + 1);
+        continue;
+      }
       const v = this.cfr(node.children[a], p, reachP, ro, mode, d + 1);
       for (let h = 0; h < n; h++) acc[h] += v[h];
     }
     out.set(acc.subarray(0, n));
     return out;
+  }
+
+  /** Training pass for a subtree the opponent cannot reach: discount regrets and add to strategy sums. */
+  private sumOnly(node: TNode, p: 0 | 1, reachP: Float32Array, d: number) {
+    if (node.k === 2) return;
+    const n = this.hands[p].length;
+    let any = false;
+    for (let h = 0; h < n; h++) if (reachP[h]) { any = true; break; }
+    if (!any) return;
+    const B = this.buf(d);
+    if (node.k === 1) {
+      for (let i = 0; i < node.cards.length; i++) this.sumOnly(node.children[i], p, this.chanceReach(reachP, p, node.cards[i], B.r1), d + 1);
+      return;
+    }
+    const A = node.labels.length;
+    if (node.player !== p) {
+      for (let a = 0; a < A; a++) this.sumOnly(node.children[a], p, reachP, d + 1);
+      return;
+    }
+    const sig = this.strategyInto(node, false, B.sig);
+    const rp = B.r1;
+    for (let a = 0; a < A; a++) {
+      for (let h = 0; h < n; h++) rp[h] = reachP[h] * sig[a * n + h];
+      this.sumOnly(node.children[a], p, rp, d + 1);
+    }
+    if (node.locked) return;
+    const R = node.regret, S = node.ssum, dp = this.dPos, dn = this.dNeg, ds = this.dStrat;
+    for (let i = 0; i < A * n; i++) {
+      const r = R[i];
+      R[i] = r > 0 ? r * dp : r * dn;
+      S[i] = S[i] * ds + reachP[i % n] * sig[i];
+    }
   }
 
   private initReach(p: 0 | 1) {
@@ -501,10 +557,12 @@ export class Solver {
   /** Run one DCFR iteration (both players). */
   iterate() {
     const t = ++this.iteration;
-    const ta = Math.pow(t, 1.5);
+    const { alpha, beta, gamma } = this.params;
+    const ta = Math.pow(t, alpha);
     this.dPos = ta / (ta + 1);
-    this.dNeg = 0.5;
-    this.dStrat = Math.pow(t / (t + 1), 2);
+    const tb = Math.pow(t, beta);
+    this.dNeg = beta === -Infinity ? 0 : tb / (tb + 1);
+    this.dStrat = Math.pow(t / (t + 1), gamma);
     for (const p of [0, 1] as const) this.cfr(this.root, p, this.initReach(p), this.initReach((1 - p) as 0 | 1), 0);
   }
 

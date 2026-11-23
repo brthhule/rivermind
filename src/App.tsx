@@ -1,16 +1,21 @@
+import { lazy, Suspense, type ComponentType } from 'react';
 import { HashRouter, NavLink, Route, Routes } from 'react-router-dom';
 import { HomePage } from './pages/HomePage';
-import { PreflopPage } from './pages/PreflopPage';
-import { SolverPage } from './pages/SolverPage';
-import { TrainerPage } from './pages/TrainerPage';
-import { PracticePage } from './pages/PracticePage';
-import { ReportsPage } from './pages/ReportsPage';
-import { IcmPage } from './pages/IcmPage';
-import { AnalyzerPage } from './pages/AnalyzerPage';
-import { EquityPage } from './pages/EquityPage';
-import { PushFoldPage } from './pages/PushFoldPage';
-import { DataPage } from './pages/DataPage';
 import { useUserData } from './store/userData';
+
+// Pages load on demand so the first paint only pays for the shell and home page.
+const page = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) =>
+  lazy(() => load().then((m) => ({ default: m[name] })));
+const PreflopPage = page(() => import('./pages/PreflopPage'), 'PreflopPage');
+const SolverPage = page(() => import('./pages/SolverPage'), 'SolverPage');
+const TrainerPage = page(() => import('./pages/TrainerPage'), 'TrainerPage');
+const PracticePage = page(() => import('./pages/PracticePage'), 'PracticePage');
+const ReportsPage = page(() => import('./pages/ReportsPage'), 'ReportsPage');
+const IcmPage = page(() => import('./pages/IcmPage'), 'IcmPage');
+const AnalyzerPage = page(() => import('./pages/AnalyzerPage'), 'AnalyzerPage');
+const EquityPage = page(() => import('./pages/EquityPage'), 'EquityPage');
+const PushFoldPage = page(() => import('./pages/PushFoldPage'), 'PushFoldPage');
+const DataPage = page(() => import('./pages/DataPage'), 'DataPage');
 
 export function Logo({ size = 28 }: { size?: number }) {
   return (
@@ -61,6 +66,7 @@ export default function App() {
           <div className="small muted label" style={{ padding: '8px 10px' }}>Runs entirely in your browser. Save your work from My data.</div>
         </aside>
         <main className="main">
+          <Suspense fallback={<div className="muted" style={{ padding: 24 }}>Loading…</div>}>
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/preflop" element={<PreflopPage />} />
@@ -74,6 +80,7 @@ export default function App() {
             <Route path="/equity" element={<EquityPage />} />
             <Route path="/data" element={<DataPage />} />
           </Routes>
+          </Suspense>
         </main>
       </div>
     </HashRouter>
