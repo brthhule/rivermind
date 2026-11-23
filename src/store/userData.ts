@@ -15,6 +15,7 @@ export interface DrillRecord { t: number; spot: string; hand: string; chosen: st
 export interface DrillStats { attempts: number; score: number; history: DrillRecord[] }
 export interface PlayRecord {
   t: number; spot: string; hero: string; heroCards: number[]; villainCards: number[]; board: number[];
+  runout?: number[]; seed?: number; prefs?: PlayPrefs;
   net: number; evLoss: number; decisions: number; log: { street: string; who: string; text: string; grade?: string; evLoss?: number }[];
 }
 export interface PlayStats { hands: number; decisions: number; evLoss: number; best: number; net: number }

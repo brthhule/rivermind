@@ -157,3 +157,39 @@ table.t tr:hover td { background: #1c2432; }
 .tpot { background: rgba(0,0,0,0.35); padding: 4px 12px; border-radius: 999px; font-size: 13px; }
 .pcard.back { width: 44px; height: 60px; background: repeating-linear-gradient(45deg, #5a3fa8 0 6px, #4a3290 6px 12px); border: 2px solid #c9c2e8; }
 button.primary .kbd { color: #062b26; border-color: rgba(6,43,38,0.4); }
+
+/* practice: study-app layout */
+.pbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 12px; }
+.pstat { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+.pstat span { font-size: 11px; color: var(--muted); }
+.pstat b { font-size: 15px; }
+.pgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: 12px; align-items: start; }
+@media (max-width: 1150px) { .pgrid { grid-template-columns: 1fr; } }
+.ptable { position: relative; width: 100%; aspect-ratio: 16 / 9.5; min-height: 340px; }
+.pt-felt { position: absolute; inset: 9% 6% 13% 6%; border-radius: 999px; background: radial-gradient(ellipse at 50% 40%, #234a5a 0%, #183846 55%, #10252f 100%); border: 7px solid #232a36; box-shadow: inset 0 0 50px rgba(0,0,0,0.55), 0 10px 30px rgba(0,0,0,0.4); }
+.pt-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.pt-center { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.pt-seat { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 104px; }
+.pt-cards { display: flex; gap: 3px; min-height: 40px; }
+.pt-plate { display: flex; flex-direction: column; align-items: center; background: #0d1219; border: 1px solid var(--line); border-radius: 10px; padding: 3px 12px; min-width: 96px; }
+.pt-pos { font-weight: 700; font-size: 12px; }
+.pt-stack { font-size: 12px; color: var(--muted); }
+.pt-seat.hero .pt-plate { border-color: #3b4a62; }
+.pt-seat.acting .pt-plate { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(53,194,176,0.35); }
+.pt-seat.folded { opacity: 0.45; }
+.pt-act { font-size: 11px; font-weight: 650; padding: 1px 8px; border-radius: 6px; background: #1b2330; }
+.pt-act.fold { color: #8ea4c8; } .pt-act.pass { color: #6be0b2; } .pt-act.agg { color: #f5a06b; }
+.pt-dealer { position: absolute; right: -10px; top: 22px; width: 20px; height: 20px; border-radius: 50%; background: #f2f2f2; color: #111; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+.pt-chip { position: absolute; transform: translate(-50%, -50%); font-size: 12px; font-weight: 700; padding: 2px 8px 2px 20px; border-radius: 999px; background: rgba(0,0,0,0.45); }
+.pt-chip::before { content: ''; position: absolute; left: 4px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: #f2b33d; border: 2px dashed #fff3; }
+.pcard.back.sm { width: 30px; height: 40px; }
+.pactions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 64px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.pact { font-size: 15px; font-weight: 700; padding: 12px 18px; border: none; color: #0b0f14; flex: 1; justify-content: center; min-width: 120px; }
+.pact:hover:not(:disabled) { filter: brightness(1.1); }
+.pact .kbd { color: #0b0f14; border-color: rgba(0,0,0,0.3); }
+.pact.primary { background: var(--accent); flex: none; }
+.prng { padding: 8px 12px; border-radius: 8px; background: var(--panel2); font-size: 13px; }
+.prng b { font-size: 17px; color: var(--accent); }
+.pres { font-weight: 650; }
+.spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: sp 0.8s linear infinite; vertical-align: -1px; }
+@keyframes sp { to { transform: rotate(360deg); } }

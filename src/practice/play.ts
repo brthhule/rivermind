@@ -14,7 +14,10 @@ export const GRADE_LABEL: Record<Grade, string> = { best: 'Best', good: 'Good', 
 export const GRADE_TAG: Record<Grade, string> = { best: 'good', good: 'ok', inaccuracy: 'inaccuracy', mistake: 'mistake', blunder: 'mistake' };
 
 export interface LogEntry { street: string; who: string; text: string; grade?: Grade; evLoss?: number }
-export interface PendingDecision { labels: string[]; freqs: number[]; evs?: number[]; pot: number; rng: number; street: string }
+export interface StrategyGrid { labels: string[]; strat: number[][]; reach: number[]; heroClass: number }
+export interface PendingDecision { labels: string[]; freqs: number[]; evs?: number[]; pot: number; rng: number; street: string; grid?: StrategyGrid }
+export interface SeatState { folded: boolean; action: string; bet: number; stack: number }
+export interface ReplaySeed { seed: number; prefs: PlayPrefs }
 export interface Feedback extends PendingDecision { chosen: number; grade: Grade; evLoss: number; rngPick: number }
 
 const STREET = (n: number) => (n === 0 ? 'Preflop' : n === 3 ? 'Flop' : n === 4 ? 'Turn' : 'River');
@@ -74,7 +77,9 @@ export class PlayHand {
   evLoss = 0;
   decisions = 0;
   bestCount = 0;
-  private rand = mkRng((Math.random() * 2 ** 31) | 0);
+  readonly seed: number;
+  private rand: () => number;
+  seats = new Map<Pos, SeatState>();
   private hist: HistItem[] = [];
   private resolve: ((a: number) => void) | null = null;
   // postflop state
@@ -85,8 +90,11 @@ export class PlayHand {
   private client: SolverClient;
   private prefs: PlayPrefs;
 
-  constructor(prefs: PlayPrefs, client: SolverClient, onChange: () => void) {
-    this.prefs = prefs;
+  constructor(prefs: PlayPrefs, client: SolverClient, onChange: () => void, seed?: number) {
+    this.seed = seed ?? ((Math.random() * 2 ** 31) | 0);
+    this.rand = mkRng(this.seed);
+    for (const p of POSITIONS) this.seats.set(p, { folded: false, action: '', bet: BLIND[p] ?? 0, stack: 100 - (BLIND[p] ?? 0) });
+    this.prefs = { ...prefs };
     this.client = client;
     this.onChange = onChange;
   }
@@ -97,6 +105,8 @@ export class PlayHand {
 
   private changed() { this.onChange(); }
   private add(e: LogEntry) { this.log.push(e); this.changed(); }
+  private seat(p: Pos, patch: Partial<SeatState>) { this.seats.set(p, { ...this.seats.get(p)!, ...patch }); }
+  get settings() { return this.prefs; }
 
   private dealAll(fixed: Partial<Record<Pos, [number, number]>> = {}) {
     const used = new Set<number>();
@@ -180,6 +190,7 @@ export class PlayHand {
         if (!st.flop) return this.finishPreflop(st.summary);
         if (st.flop.oop !== this.heroPos && st.flop.ip !== this.heroPos) return this.finishPreflop(st.summary);
         this.villainPos = st.flop.oop === this.heroPos ? st.flop.ip : st.flop.oop;
+        for (const pos of POSITIONS) if (pos !== this.heroPos && pos !== this.villainPos) this.seat(pos, { folded: true });
         this.heroSide = st.flop.oop === this.heroPos ? 0 : 1;
         this.pot = st.flop.pot;
         this.stack = st.flop.stack;
@@ -193,13 +204,14 @@ export class PlayHand {
       let a: number;
       if (sp.hero === this.heroPos) {
         const potNow = [...this.contrib.values()].reduce((s, x) => s + x, 0);
-        a = await this.heroDecision({ labels: sp.actions.map((x) => x.label), freqs, pot: potNow, rng: 1 + Math.floor(this.rand() * 100), street: 'Preflop' });
+        a = await this.heroDecision({ labels: sp.actions.map((x) => x.label), freqs, pot: potNow, rng: 1 + Math.floor(this.rand() * 100), street: 'Preflop', grid: { labels: sp.actions.map((x) => x.label), strat: sp.strat, reach: sp.reach, heroClass: cls } });
       } else {
         a = this.sample(freqs);
         if (sp.actions[a].kind !== 'fold' || this.hist.some((h) => h.action > 0)) this.add({ street: 'Preflop', who: sp.hero, text: sp.actions[a].label });
       }
       const act = sp.actions[a];
       if (act.kind !== 'fold') this.contrib.set(sp.hero, act.amount);
+      this.seat(sp.hero, act.kind === 'fold' ? { folded: true, action: 'Fold' } : { action: act.label, bet: act.amount, stack: 100 - act.amount });
       this.hist.push({ pos: sp.hero, action: a, label: act.label });
       if (act.kind === 'fold' && sp.hero === this.heroPos) return this.finishPreflop('You fold.');
     }
@@ -245,7 +257,11 @@ export class PlayHand {
     this.pot = ps.pot;
     this.stack = ps.stack;
     const inv = (100 - ps.stack);
-    for (const pos of POSITIONS) this.contrib.set(pos, pos === this.heroPos || pos === this.villainPos ? inv : BLIND[pos] ?? 0);
+    for (const pos of POSITIONS) {
+      this.contrib.set(pos, pos === this.heroPos || pos === this.villainPos ? inv : BLIND[pos] ?? 0);
+      const inHand = pos === this.heroPos || pos === this.villainPos;
+      this.seat(pos, { folded: !inHand, action: inHand ? '' : 'Fold', bet: 0, stack: 100 - (inHand ? inv : BLIND[pos] ?? 0) });
+    }
     this.add({ street: 'Preflop', who: 'Dealer', text: `${ps.name}. You are ${this.heroPos} with ${comboStr(...heroC)}` });
     await this.playPostflop([rangeToWeights(ps.oopRange), rangeToWeights(ps.ipRange)], 3);
   }
@@ -260,6 +276,8 @@ export class PlayHand {
     w[vill][comboId(vc[0], vc[1])] = Math.max(w[vill][comboId(vc[0], vc[1])], 0.002);
     this.boardShown = n;
     const board = this.runout.slice(0, n);
+    const streetStack = this.stack;
+    for (const pos of [this.heroPos, this.villainPos!]) this.seat(pos, { bet: 0, action: '', stack: streetStack });
     this.add({ street: STREET(n), who: 'Dealer', text: `${STREET(n)} dealt. Pot ${this.pot.toFixed(1)}bb, ${this.stack.toFixed(1)}bb behind.` });
     const cfg: SolverConfig = {
       board, pot: this.pot, stack: this.stack, ranges: [new Array(169).fill(0), new Array(169).fill(0)], weights: w,
@@ -312,11 +330,14 @@ export class PlayHand {
       let a: number;
       if (pl === hero) {
         const evs = info.labels!.map((_, k) => info.actionEv![k * nn + idx]);
-        a = await this.heroDecision({ labels: info.labels!, freqs, evs, pot: info.pot, rng: 1 + Math.floor(this.rand() * 100), street: STREET(n) });
+        a = await this.heroDecision({ labels: info.labels!, freqs, evs, pot: info.pot, rng: 1 + Math.floor(this.rand() * 100), street: STREET(n), grid: gridFrom(info, hands[pl], hc) });
       } else {
         a = this.sample(freqs);
         this.add({ street: STREET(n), who: names[pl], text: info.labels![a] });
       }
+      const pos = pl === hero ? this.heroPos : this.villainPos!;
+      const amt = info.amounts![a];
+      this.seat(pos, { action: info.labels![a].replace(/ \(\d+%\)/, ''), bet: amt, stack: streetStack - amt, folded: info.labels![a] === 'Fold' });
       this.path.push(a);
     }
   }
@@ -331,8 +352,24 @@ export class PlayHand {
   record(): PlayRecord {
     return {
       t: Date.now(), spot: this.spotName, hero: this.heroPos, heroCards: [...this.heroCards], villainCards: this.villainCards ? [...this.villainCards] : [],
-      board: this.board, net: this.result?.net ?? 0, evLoss: Math.round(this.evLoss * 100) / 100, decisions: this.decisions, log: this.log.map((l) => ({ ...l })),
+      board: this.board, runout: [...this.runout], seed: this.seed, prefs: { ...this.prefs }, net: this.result?.net ?? 0, evLoss: Math.round(this.evLoss * 100) / 100, decisions: this.decisions, log: this.log.map((l) => ({ ...l })),
     };
   }
 }
 
+
+/** Reach-weighted strategy per hand class for the acting player at a solver node. */
+function gridFrom(info: NodeInfo, hands: { c1: number; c2: number; cls: number }[], hero: [number, number]): StrategyGrid {
+  const p = info.player!, n = hands.length, A = info.labels!.length;
+  const reach = new Array(169).fill(0), possible = new Array(169).fill(0);
+  const strat = Array.from({ length: 169 }, () => new Array(A).fill(0));
+  for (let h = 0; h < n; h++) {
+    const c = hands[h].cls, r = info.reach[p][h];
+    possible[c]++;
+    if (r <= 0) continue;
+    reach[c] += r;
+    for (let a = 0; a < A; a++) strat[c][a] += r * info.strategy![a * n + h];
+  }
+  for (let c = 0; c < 169; c++) if (reach[c] > 0) for (let a = 0; a < A; a++) strat[c][a] /= reach[c];
+  return { labels: info.labels!, strat, reach: reach.map((r, c) => (possible[c] ? Math.min(1, r / possible[c]) : 0)), heroClass: CLASS_INDEX.get(classOf(hero[0], hero[1]))! };
+}
