@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { Range } from '../engine/range';
-import type { SolverConfig } from '../solver/solver';
+import type { NodeLock, SolverConfig } from '../solver/solver';
 import { presetSpots } from '../engine/preflop';
 import { parseCards } from '../engine/cards';
 
@@ -22,6 +22,7 @@ export interface SolverSetup {
   depth: number;
   iterations: number;
   targetPct: number;
+  locks: (NodeLock & { label: string })[];
 }
 
 const s = (bet: string, raise: string): SizeText => ({ bet, raise });
@@ -35,7 +36,7 @@ export function defaultSetup(): SolverSetup {
       turn: [s('66', '60'), s('50, 100', '60')],
       river: [s('75', '60'), s('50, 125', '60')],
     },
-    maxRaises: 2, allIn: true, allInThreshold: 0.9, depth: 1, iterations: 300, targetPct: 1,
+    maxRaises: 2, allIn: true, allInThreshold: 0.9, depth: 1, iterations: 300, targetPct: 1, locks: [],
   };
 }
 
@@ -48,6 +49,7 @@ export function toConfig(st: SolverSetup): SolverConfig {
     board: st.board, pot: st.pot, stack: st.stack, ranges: [st.oopRange, st.ipRange],
     sizes: { flop: conv(st.sizes.flop), turn: conv(st.sizes.turn), river: conv(st.sizes.river) },
     maxRaises: st.maxRaises, allIn: st.allIn, allInThreshold: st.allInThreshold, lastStreet: last,
+    locks: (st.locks ?? []).map(({ path, freqs, perClass }) => ({ path, freqs, perClass })),
   };
 }
 

@@ -4,9 +4,12 @@ import { useUserData } from '../store/userData';
 
 const CARDS = [
   { to: '/preflop', icon: '▦', title: 'Preflop charts', text: 'Browse 6-max 100bb strategies for every open, 3-bet, 4-bet and all-in spot, hand by hand.' },
-  { to: '/solver', icon: '⚙', title: 'Postflop solver', text: 'Solve any flop, turn or river spot with your own ranges and bet sizes, then explore the strategy tree.' },
-  { to: '/trainer', icon: '◎', title: 'Trainer', text: 'Drill preflop decisions or play solved postflop spots against the solver and get graded on every action.' },
-  { to: '/analyzer', icon: '☰', title: 'Hand analyzer', text: 'Paste hand histories to check your preflop decisions and see your equity on each street.' },
+  { to: '/solver', icon: '⚙', title: 'Postflop solver', text: 'Solve any flop, turn or river spot with your own ranges and bet sizes, lock nodes, and explore the strategy tree.' },
+  { to: '/practice', icon: '♠', title: 'Play hands', text: 'Play full hands from preflop to river against a strategy that re-solves every street. Every decision is scored by EV lost.' },
+  { to: '/reports', icon: '▤', title: 'Aggregate reports', text: 'Solve a spot across dozens of representative flops and compare bet frequencies, equity and EV by texture.' },
+  { to: '/trainer', icon: '◎', title: 'Spot drills', text: 'Rapid-fire preflop decisions, or replay your latest solved spot against the solver.' },
+  { to: '/icm', icon: '🏆', title: 'ICM tools', text: 'Tournament equity for any stacks and payouts, plus push/fold ranges that account for ICM.' },
+  { to: '/analyzer', icon: '☰', title: 'Hand analyzer', text: 'Upload hand histories to grade your preflop play, check equity on each street, and replay hands.' },
   { to: '/equity', icon: '%', title: 'Equity calculator', text: 'Range vs range equity for up to four players on any board, with a hand-by-hand heatmap.' },
   { to: '/pushfold', icon: '⇪', title: 'Push / fold', text: 'Short-stack shove and call ranges, solved to equilibrium for any stack depth.' },
 ];
@@ -35,6 +38,7 @@ export function HomePage() {
         <div className="stat"><span className="muted small">Preflop drills</span><b>{pf.attempts}</b></div>
         <div className="stat"><span className="muted small">Preflop score</span><b>{pf.attempts ? Math.round((pf.score / pf.attempts) * 100) : 0}%</b></div>
         <div className="stat"><span className="muted small">Postflop drills</span><b>{po.attempts}</b></div>
+        <div className="stat"><span className="muted small">Hands played</span><b>{d.play.stats.hands}</b></div>
         <div className="stat"><span className="muted small">Saved ranges</span><b>{d.savedRanges.length}</b></div>
         <div className="spacer" />
         <Link to="/data"><button>Export or import my data</button></Link>

@@ -66,6 +66,18 @@ export class SolverClient {
     this.ensure().postMessage({ type: 'solve', config, maxIterations, targetPct });
   }
 
+  /** Solve and resolve when finished (rejects on error). */
+  solveAsync(config: SolverConfig, maxIterations: number, targetPct: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const un = this.subscribe(() => {
+        const s = this.status;
+        if (s.state === 'done') { un(); resolve(); }
+        else if (s.state === 'error') { un(); reject(new Error(s.error)); }
+      });
+      this.solve(config, maxIterations, targetPct);
+    });
+  }
+
   stop() { this.worker?.postMessage({ type: 'stop' }); }
 
   private request<T>(msg: object): Promise<T> {
@@ -87,3 +99,9 @@ export class SolverClient {
 }
 
 export const solverClient = new SolverClient();
+
+/** Separate solver used by full-hand practice so it never replaces the study solution. */
+export const practiceClient = new SolverClient();
+
+/** Solver used to batch-solve flops for aggregate reports. */
+export const reportClient = new SolverClient();

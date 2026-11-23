@@ -13,6 +13,7 @@ import { BoardPicker, CardGridPicker } from '../components/BoardPicker';
 import { ActionList } from '../components/ActionList';
 import { Board, CardText, Combo } from '../components/cards';
 import { actionColors, heat } from '../components/colors';
+import { Modal } from '../components/Modal';
 
 const STREETS = ['flop', 'turn', 'river'] as const;
 
@@ -113,6 +114,18 @@ function SetupPanel() {
         <label className="field">Max iterations<input type="number" value={st.iterations} onChange={(e) => setSetup({ iterations: Math.max(1, +e.target.value) })} /></label>
         <label className="field">Stop at exploitability (% pot)<input type="number" step="0.1" value={st.targetPct} onChange={(e) => setSetup({ targetPct: Math.max(0, +e.target.value) })} /></label>
       </div>
+      {(st.locks ?? []).length > 0 && (
+        <div className="col" style={{ gap: 6 }}>
+          <span className="small muted">Node locks (applied on the next solve)</span>
+          {st.locks.map((l, i) => (
+            <div key={i} className="row small" style={{ gap: 6 }}>
+              <span className="chip">🔒 {l.label}</span>
+              <span className="muted">{l.freqs ? l.freqs.map((f) => `${Math.round(f * 100)}%`).join(' / ') : 'fixed per hand'}</span>
+              <button className="ghost" onClick={() => setSetup({ locks: st.locks.filter((_, k) => k !== i) })}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="small muted">
         {estErr ? <span style={{ color: 'var(--danger)' }}>{estErr}</span> : est ? `Tree: ${est.nodes.toLocaleString()} nodes, about ${Math.max(1, Math.round(est.mb))} MB.` : busy ? '' : 'Estimating tree size…'}
         {depth > 0 && streetIdx === 0 && ' Multi-street flop trees are slow in the browser. Keep bet sizes to one or two per street.'}
@@ -202,6 +215,7 @@ function Explorer() {
   const [view, setView] = useState<'strategy' | 'ev' | 'equity'>('strategy');
   const [who, setWho] = useState<'acting' | 0 | 1>('acting');
   const [hover, setHover] = useState<number | null>(null);
+  const [locking, setLocking] = useState(false);
   const setupNow = useSetup();
   const version = solverClient.version;
   const ready = status.state === 'done' && solverClient.hands;
@@ -317,8 +331,24 @@ function Explorer() {
           </div>
           <HandDetail info={info} p={p} hands={hands[p]} cls={hover} colors={colors} labels={labels} />
           <div className="row">
-            <button onClick={() => navigate('/trainer?mode=postflop')}>◎ Practice this spot</button>
+            <button onClick={() => navigate('/trainer?mode=postflop')}>◎ Drill this spot</button>
+            {info.kind === 'action' && <button onClick={() => setLocking(true)}>🔒 {info.locked ? 'Edit node lock' : 'Lock this node'}</button>}
           </div>
+          {locking && info.kind === 'action' && (
+            <LockDialog
+              labels={info.labels!}
+              totals={labels.length ? totals : info.labels!.map(() => 1 / info.labels!.length)}
+              perClass={Array.from({ length: 169 }, (_, c) => (labels.length ? labels.map((_, a) => agg.act[a][c]) : []))}
+              where={`${actor === 0 ? 'OOP' : 'IP'} at ${path.length ? path.map((x) => x.label).join(' › ') : 'the first decision'}`}
+              onClose={() => setLocking(false)}
+              onLock={(lock) => {
+                const pathVals = path.map((x) => x.value);
+                const key = pathVals.join(',');
+                setSetup({ locks: [...(setupNow.locks ?? []).filter((l) => l.path.join(',') !== key), { ...lock, path: pathVals, label: `${actor === 0 ? 'OOP' : 'IP'} · ${path.length ? path.map((x) => x.label).join(' › ') : 'root'}` }] });
+                setLocking(false);
+              }}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -377,5 +407,33 @@ export function SolverPage() {
         <Explorer />
       </div>
     </div>
+  );
+}
+
+function LockDialog({ labels, totals, perClass, where, onClose, onLock }: { labels: string[]; totals: number[]; perClass: number[][]; where: string; onClose: () => void; onLock: (l: { freqs?: number[]; perClass?: number[][] }) => void }) {
+  const [freqs, setFreqs] = useState(() => totals.map((x) => Math.round(x * 100)));
+  const colors = actionColors(labels);
+  const sum = freqs.reduce((s, x) => s + x, 0);
+  return (
+    <Modal title="Lock this node" onClose={onClose} width={560}>
+      <div className="col">
+        <p className="muted">Fix the strategy for {where}, then solve again. The other player will adjust to exploit it, which shows how to play against opponents who deviate.</p>
+        {labels.map((l, a) => (
+          <div key={a} className="row">
+            <span className="dot" style={{ width: 12, height: 12, borderRadius: 3, background: colors[a] }} />
+            <span style={{ width: 150 }}>{l}</span>
+            <input type="range" min={0} max={100} value={freqs[a]} onChange={(e) => { const f = [...freqs]; f[a] = +e.target.value; setFreqs(f); }} />
+            <b style={{ width: 50, textAlign: 'right' }}>{sum ? Math.round((freqs[a] / sum) * 100) : 0}%</b>
+          </div>
+        ))}
+        <span className="small muted">Frequencies are normalized to 100% and applied to every hand in the range.</span>
+        <div className="row">
+          {perClass[0]?.length > 0 && <button onClick={() => onLock({ perClass })}>Lock current strategy exactly</button>}
+          <div className="spacer" />
+          <button onClick={onClose}>Cancel</button>
+          <button className="primary" disabled={!sum} onClick={() => onLock({ freqs: freqs.map((x) => x / sum) })}>Lock with these frequencies</button>
+        </div>
+      </div>
+    </Modal>
   );
 }

@@ -17,6 +17,18 @@ export interface SolverConfig {
   allIn: boolean; // always offer an all-in option
   allInThreshold: number; // a bet using this fraction of the stack or more becomes all-in
   lastStreet: 3 | 4 | 5; // board size of the last street with betting
+  /** Optional exact starting weight per combo (indexed by comboId 0..1325); overrides ranges. */
+  weights?: [number[] | null, number[] | null];
+  /** Node locks: fix a player's strategy at a node (path as in query()). */
+  locks?: NodeLock[];
+}
+
+export interface NodeLock {
+  path: number[];
+  /** Same frequencies for every hand, one per action. */
+  freqs?: number[];
+  /** Or a strategy per hand class: perClass[class][action]. */
+  perClass?: number[][];
 }
 
 export interface Hand { c1: number; c2: number; cls: number; w: number }
@@ -25,6 +37,7 @@ interface ActionNode {
   k: 0; player: 0 | 1; labels: string[]; amounts: number[]; children: TNode[];
   regret: Float32Array; ssum: Float32Array; n: number;
   board: number[]; commit: [number, number];
+  locked?: Float32Array;
 }
 interface ChanceNode { k: 1; board: number[]; cards: number[]; children: TNode[]; commit: [number, number] }
 interface TermNode { k: 2; folder: -1 | 0 | 1; board: number[]; commit: [number, number] }
@@ -50,6 +63,7 @@ export interface NodeInfo {
   actionEv?: Float32Array;
   /** EV per hand for each player, in bb (NaN where unreachable) */
   ev: [Float32Array, Float32Array];
+  locked?: boolean;
 }
 
 export const MAX_NODES = 1_500_000;
@@ -71,8 +85,15 @@ export class Solver {
 
   constructor(cfg: SolverConfig) {
     this.cfg = cfg;
-    const h0 = expandRange(cfg.ranges[0], cfg.board).map((c) => ({ c1: c.c1, c2: c.c2, cls: c.cls, w: c.w }));
-    const h1 = expandRange(cfg.ranges[1], cfg.board).map((c) => ({ c1: c.c1, c2: c.c2, cls: c.cls, w: c.w }));
+    const mk = (p: 0 | 1) => {
+      const wts = cfg.weights?.[p];
+      if (wts) {
+        const all = expandRange(new Array(169).fill(1), cfg.board);
+        return all.filter((c) => wts[c.id] > 0).map((c) => ({ c1: c.c1, c2: c.c2, cls: c.cls, w: wts[c.id] }));
+      }
+      return expandRange(cfg.ranges[p], cfg.board).map((c) => ({ c1: c.c1, c2: c.c2, cls: c.cls, w: c.w }));
+    };
+    const h0 = mk(0), h1 = mk(1);
     if (!h0.length || !h1.length) throw new Error('Both ranges need at least one hand that does not conflict with the board.');
     this.hands = [h0, h1];
     this.c1 = [Int32Array.from(h0, (h) => h.c1), Int32Array.from(h1, (h) => h.c1)];
@@ -92,6 +113,33 @@ export class Solver {
     this.nodes = 0;
     this.floats = 0;
     this.root = this.buildAction(0, this.cfg.board, [0, 0], 0, false, allocate);
+    for (const lock of this.cfg.locks ?? []) this.applyLock(lock);
+  }
+
+  private nodeAt(path: number[]): TNode {
+    let node = this.root;
+    for (const step of path) {
+      if (node.k === 0) node = node.children[step];
+      else if (node.k === 1) { const i = node.cards.indexOf(step); if (i < 0) throw new Error('Locked path not found'); node = node.children[i]; }
+      else throw new Error('Locked path not found');
+      if (!node) throw new Error('Locked path not found');
+    }
+    return node;
+  }
+
+  private applyLock(lock: NodeLock) {
+    const node = this.nodeAt(lock.path);
+    if (node.k !== 0) throw new Error('Only decision points can be locked');
+    const A = node.labels.length, n = node.n;
+    const st = new Float32Array(A * n);
+    const hs = this.hands[node.player];
+    for (let h = 0; h < n; h++) {
+      const row = lock.perClass ? lock.perClass[hs[h].cls] : lock.freqs;
+      let tot = 0;
+      for (let a = 0; a < A; a++) tot += Math.max(0, row?.[a] ?? 0);
+      for (let a = 0; a < A; a++) st[a * n + h] = tot > 0 ? Math.max(0, row![a]) / tot : 1 / A;
+    }
+    node.locked = st;
   }
 
   private streetName(board: number[]) {
@@ -340,12 +388,15 @@ export class Solver {
   // ---------- CFR ----------
   private strategyInto(node: ActionNode, avg: boolean, s: Float32Array) {
     const A = node.labels.length, n = node.n;
-    const src = avg ? node.ssum : node.regret;
+    if (node.locked) { s.set(node.locked); return s; }
     for (let h = 0; h < n; h++) {
-      let tot = 0;
-      for (let a = 0; a < A; a++) { const v = src[a * n + h]; if (v > 0) tot += v; }
-      if (tot > 0) for (let a = 0; a < A; a++) { const v = src[a * n + h]; s[a * n + h] = v > 0 ? v / tot : 0; }
-      else for (let a = 0; a < A; a++) s[a * n + h] = 1 / A;
+      // average strategy; hands never reached (own reach 0) fall back to the current regret-matching strategy
+      for (const src of avg ? [node.ssum, node.regret] : [node.regret]) {
+        let tot = 0;
+        for (let a = 0; a < A; a++) { const v = src[a * n + h]; if (v > 0) tot += v; }
+        if (tot > 0) { for (let a = 0; a < A; a++) { const v = src[a * n + h]; s[a * n + h] = v > 0 ? v / tot : 0; } break; }
+        for (let a = 0; a < A; a++) s[a * n + h] = 1 / A;
+      }
     }
     return s;
   }
@@ -408,13 +459,13 @@ export class Solver {
         const v = this.cfr(node.children[a], p, rp, reachO, mode, d + 1);
         vals.set(v.subarray(0, n), a * n);
       }
-      if (mode === 1) {
+      if (mode === 1 && !node.locked) {
         for (let h = 0; h < n; h++) { let m = -Infinity; for (let a = 0; a < A; a++) m = Math.max(m, vals[a * n + h]); out[h] = m; }
         return out;
       }
       out.fill(0, 0, n);
       for (let a = 0; a < A; a++) for (let h = 0; h < n; h++) out[h] += sig[a * n + h] * vals[a * n + h];
-      if (mode === 0) {
+      if (mode === 0 && !node.locked) {
         const R = node.regret, S = node.ssum, dp = this.dPos, dn = this.dNeg, ds = this.dStrat;
         for (let a = 0; a < A; a++) {
           for (let h = 0; h < n; h++) {
@@ -536,7 +587,7 @@ export class Solver {
     const norm = (p: 0 | 1, v: Float32Array) => {
       const b = new Float32Array(v.length);
       this.blocked(p, reach[1 - p], b, 1);
-      return v.map((x, h) => (b[h] > 0 && reach[p][h] > 0 ? x / b[h] + half : NaN));
+      return v.map((x, h) => (b[h] > 0 ? x / b[h] + half : NaN));
     };
     for (const p of [0, 1] as const) ev[p] = norm(p, this.cfr(node, p, reach[p], reach[1 - p], 2).slice(0, this.hands[p].length));
     const info: NodeInfo = { kind: node.k === 0 ? 'action' : node.k === 1 ? 'chance' : 'terminal', board, pot, commit: node.commit, reach, equity, ev };
@@ -552,6 +603,7 @@ export class Solver {
         aev.set(v, a * n);
       });
       info.actionEv = aev;
+      info.locked = !!node.locked;
     } else if (node.k === 1) info.cards = node.cards;
     else info.folder = node.folder;
     return info;

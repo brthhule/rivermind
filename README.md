@@ -9,6 +9,11 @@ the production build is a static site, and all user data can be exported to a te
 | --- | --- |
 | Preflop charts | 6-max cash, 100bb. Navigate opens, 3-bets, 4-bets and all-ins hand by hand. Strategy grid, action totals, per-hand equity vs the villain range. |
 | Postflop solver | Heads-up Discounted CFR solver in a Web Worker. Any flop, turn or river; custom ranges, pot, stack, bet and raise sizes per street and player, raise cap, all-in threshold. Explore the tree (actions and dealt cards), with strategy, EV and equity views and a per-combo table. |
+| Play hands | Full-hand practice from preflop (6-max) or from preset flop spots. Postflop streets are re-solved live from both players' exact ranges. EV-loss grading (Best / Good / Inaccuracy / Mistake / Blunder), randomizer for mixed strategies, auto-play of obvious decisions, session and all-time stats, hand history with replayer. |
+| Node locking | Fix a player's strategy at any decision (uniform frequencies or the exact current strategy) and re-solve to see the exploitative response. |
+| Aggregate reports | Batch-solves a spot over 12 to 85 representative flops (from the 1,755 suit-distinct flops, weighted) with texture filters, sorting and links into the solver. |
+| ICM tools | Malmuth-Harville ICM equity for up to 9 players, and ICM-aware SB vs BB push/fold ranges (compare with chip EV). |
+| Hand replayer | Step through practice hands or imported hand histories. |
 | Push / fold | Heads-up SB shove / BB call equilibrium for 1 to 25bb, with antes. |
 | Trainer | Preflop drills over chosen spot types and positions, graded by strategy frequency. Postflop drills that play the last solved spot against the solver, graded by EV loss. |
 | Hand analyzer | Parses PokerStars hand histories. Grades preflop decisions against the model and shows equity vs the opponent's modeled range and pot odds on later streets. |
@@ -43,7 +48,9 @@ solver, because browsers block Web Workers on `file://` pages.
 
 ## Known limits
 
-- Postflop solving is heads-up only. Multi-street flop trees are slow in JavaScript; the default flop mode
+- Postflop solving is heads-up only (multiway pots are not solved).
+- Play-hands re-solving is depth-limited: each street is solved with later streets checked down, so
+  it is an approximation of full-game equilibrium. Multi-street flop trees are slow in JavaScript; the default flop mode
   solves the flop and checks down the turn and river, which overstates equity realization.
 - No suit isomorphism or pre-solved solution library yet.
 - Preflop charts are from a heuristic model, not a full preflop solve.

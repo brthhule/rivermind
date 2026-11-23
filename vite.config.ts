@@ -6,4 +6,5 @@ export default defineConfig({
   base: './',
   plugins: [react()],
   worker: { format: 'es' },
+  build: { chunkSizeWarningLimit: 900 },
 })

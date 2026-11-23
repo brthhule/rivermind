@@ -3,6 +3,9 @@ import { HomePage } from './pages/HomePage';
 import { PreflopPage } from './pages/PreflopPage';
 import { SolverPage } from './pages/SolverPage';
 import { TrainerPage } from './pages/TrainerPage';
+import { PracticePage } from './pages/PracticePage';
+import { ReportsPage } from './pages/ReportsPage';
+import { IcmPage } from './pages/IcmPage';
 import { AnalyzerPage } from './pages/AnalyzerPage';
 import { EquityPage } from './pages/EquityPage';
 import { PushFoldPage } from './pages/PushFoldPage';
@@ -29,9 +32,12 @@ const NAV = [
   { section: 'Study' },
   { to: '/preflop', icon: '▦', label: 'Preflop charts' },
   { to: '/solver', icon: '⚙', label: 'Postflop solver' },
+  { to: '/reports', icon: '▤', label: 'Aggregate reports' },
   { to: '/pushfold', icon: '⇪', label: 'Push / fold' },
+  { to: '/icm', icon: '🏆', label: 'ICM tools' },
   { section: 'Practice' },
-  { to: '/trainer', icon: '◎', label: 'Trainer' },
+  { to: '/practice', icon: '♠', label: 'Play hands' },
+  { to: '/trainer', icon: '◎', label: 'Spot drills' },
   { section: 'Review' },
   { to: '/analyzer', icon: '☰', label: 'Hand analyzer' },
   { to: '/equity', icon: '%', label: 'Equity calculator' },
@@ -61,6 +67,9 @@ export default function App() {
             <Route path="/solver" element={<SolverPage />} />
             <Route path="/pushfold" element={<PushFoldPage />} />
             <Route path="/trainer" element={<TrainerPage />} />
+            <Route path="/practice" element={<PracticePage />} />
+            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/icm" element={<IcmPage />} />
             <Route path="/analyzer" element={<AnalyzerPage />} />
             <Route path="/equity" element={<EquityPage />} />
             <Route path="/data" element={<DataPage />} />

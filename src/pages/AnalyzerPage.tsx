@@ -1,6 +1,23 @@
 import { useMemo, useState } from 'react';
 import { parseHand, reviewHand, splitHands, SAMPLE_HH, type HandReview } from '../engine/handHistory';
 import { Board, PlayingCard } from '../components/cards';
+import { HandReplayer, type ReplayData } from '../components/HandReplayer';
+import type { ParsedHand } from '../engine/handHistory';
+
+function toReplay(h: ParsedHand): ReplayData {
+  const pos = (n: string) => h.players.find((p) => p.name === n)?.pos ?? n;
+  const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+  const log = [
+    { street: 'Preflop', who: 'Dealer', text: `${pos(h.hero)} is dealt the hand` },
+    ...h.actions.map((a) => ({
+      street: cap(a.street),
+      who: a.player === h.hero ? `${pos(a.player)} (you)` : pos(a.player),
+      text: a.kind === 'fold' || a.kind === 'check' ? cap(a.kind) : `${cap(a.kind)} ${a.kind === 'raise' ? 'to ' : ''}${(a.kind === 'call' ? a.amount : a.to).toFixed(1)}bb${a.allIn ? ' (all-in)' : ''}`,
+    })),
+    { street: h.board.length >= 5 ? 'River' : 'Result', who: 'Result', text: `${(h.heroNet ?? 0) >= 0 ? 'Won' : 'Lost'} ${Math.abs(h.heroNet ?? 0).toFixed(1)}bb` },
+  ];
+  return { title: `Hand #${h.id}`, hero: pos(h.hero), heroCards: h.heroCards, board: h.board, log, net: h.heroNet ?? 0 };
+}
 
 export function AnalyzerPage() {
   const [text, setText] = useState('');
@@ -8,6 +25,7 @@ export function AnalyzerPage() {
   const [err, setErr] = useState('');
   const [open, setOpen] = useState<number | null>(0);
   const [filter, setFilter] = useState<'all' | 'flagged'>('all');
+  const [replay, setReplay] = useState<ParsedHand | null>(null);
 
   const run = (t: string) => {
     setErr('');
@@ -79,6 +97,7 @@ export function AnalyzerPage() {
                   <span className="muted small">#{r.hand.id}</span>
                   <div className="spacer" />
                   {r.decisions.filter((d) => d.grade !== 'info').map((d, k) => <span key={k} className={`tag ${d.grade}`}>{d.street}</span>)}
+                  <button className="ghost" onClick={(e) => { e.stopPropagation(); setReplay(r.hand); }}>▶ Replay</button>
                   <b style={{ color: (r.hand.heroNet ?? 0) >= 0 ? 'var(--good)' : 'var(--danger)', minWidth: 70, textAlign: 'right' }}>{(r.hand.heroNet ?? 0) >= 0 ? '+' : ''}{(r.hand.heroNet ?? 0).toFixed(1)}bb</b>
                 </div>
                 {open === i && (
@@ -103,6 +122,7 @@ export function AnalyzerPage() {
           </div>
         </>
       )}
+      {replay && <HandReplayer record={toReplay(replay)} onClose={() => setReplay(null)} />}
     </div>
   );
 }

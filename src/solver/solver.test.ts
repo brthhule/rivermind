@@ -62,3 +62,21 @@ describe('solver', () => {
     console.log('flop+turn nodes', s.nodes, 'mb', s.estimateMB().toFixed(0));
   });
 });
+
+describe('solver extras', () => {
+  it('node lock forces strategy and exact weights work', () => {
+    const base = cfg('Ks7d2c9h3s', 'AA, KQs, QJs, JTs, T9s, 87s', 'KJ, KT, 99, 77, 22, QQ');
+    const s = new Solver({ ...base, locks: [{ path: [], freqs: [1, 0, 0] }] });
+    s.build();
+    for (let i = 0; i < 100; i++) s.iterate();
+    const info = s.query([]);
+    expect(info.locked).toBe(true);
+    expect(info.strategy![0]).toBe(1);
+    // IP should now bet more often after the check than in an unlocked solve is not asserted; just ensure query works
+    const w = new Array(1326).fill(0);
+    s.hands[0].slice(0, 5).forEach((h) => { const hi = Math.max(h.c1, h.c2), lo = Math.min(h.c1, h.c2); w[(hi * (hi - 1)) / 2 + lo] = 0.5; });
+    const s2 = new Solver({ ...base, weights: [w, null] });
+    expect(s2.hands[0].length).toBe(5);
+    expect(s2.hands[0][0].w).toBe(0.5);
+  });
+});

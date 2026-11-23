@@ -13,6 +13,14 @@ export interface DrillPrefs {
 }
 export interface DrillRecord { t: number; spot: string; hand: string; chosen: string; grade: string; evLoss?: number }
 export interface DrillStats { attempts: number; score: number; history: DrillRecord[] }
+export interface PlayRecord {
+  t: number; spot: string; hero: string; heroCards: number[]; villainCards: number[]; board: number[];
+  net: number; evLoss: number; decisions: number; log: { street: string; who: string; text: string; grade?: string; evLoss?: number }[];
+}
+export interface PlayStats { hands: number; decisions: number; evLoss: number; best: number; net: number }
+export interface PlayPrefs { start: string; heroSide: 'oop' | 'ip' | 'random'; heroPos: string; sizing: 'simple' | 'standard'; accuracy: 'fast' | 'standard'; autoObvious: boolean; rng: boolean }
+export interface ReportRow { flop: number[]; weight: number; oop: { labels: string[]; freqs: number[] }; ip: { labels: string[]; freqs: number[] }; ev: [number, number]; eq: [number, number] }
+export interface SavedReport { name: string; t: number; spot: string; pot: number; sizes: string; rows: ReportRow[] }
 export interface SavedSolverSetup { name: string; setup: unknown }
 export interface UserData {
   version: number;
@@ -21,8 +29,16 @@ export interface UserData {
   stats: { preflop: DrillStats; postflop: DrillStats };
   solverSetups: SavedSolverSetup[];
   settings: { fourColor: boolean };
+  play: { prefs: PlayPrefs; stats: PlayStats; history: PlayRecord[] };
+  reports: SavedReport[];
   updated: number;
 }
+
+export const defaultPlay = (): UserData['play'] => ({
+  prefs: { start: 'preflop', heroSide: 'random', heroPos: 'random', sizing: 'simple', accuracy: 'fast', autoObvious: true, rng: true },
+  stats: { hands: 0, decisions: 0, evLoss: 0, best: 0, net: 0 },
+  history: [],
+});
 
 export const defaultData = (): UserData => ({
   version: DATA_VERSION,
@@ -31,6 +47,8 @@ export const defaultData = (): UserData => ({
   stats: { preflop: { attempts: 0, score: 0, history: [] }, postflop: { attempts: 0, score: 0, history: [] } },
   solverSetups: [],
   settings: { fourColor: true },
+  play: defaultPlay(),
+  reports: [],
   updated: Date.now(),
 });
 
@@ -60,6 +78,12 @@ function normalize(x: any): UserData {
     },
     solverSetups: Array.isArray(x.solverSetups) ? x.solverSetups : [],
     settings: { ...d.settings, ...(x.settings ?? {}) },
+    play: {
+      prefs: { ...d.play.prefs, ...(x.play?.prefs ?? {}) },
+      stats: { ...d.play.stats, ...(x.play?.stats ?? {}) },
+      history: Array.isArray(x.play?.history) ? x.play.history.slice(-200) : [],
+    },
+    reports: Array.isArray(x.reports) ? x.reports.slice(-10) : [],
     updated: typeof x.updated === 'number' ? x.updated : Date.now(),
   };
 }
@@ -107,6 +131,11 @@ export function importData(text: string, mode: 'replace' | 'merge') {
       d.stats[k].history = [...d.stats[k].history, ...incoming.stats[k].history].sort((a, b) => a.t - b.t).slice(-500);
     }
     d.drills = incoming.drills;
+    const rn = new Set(d.reports.map((r) => r.name));
+    d.reports = [...d.reports, ...incoming.reports.filter((r) => !rn.has(r.name))].slice(-10);
+    d.play.prefs = incoming.play.prefs;
+    for (const k of ['hands', 'decisions', 'evLoss', 'best', 'net'] as const) d.play.stats[k] += incoming.play.stats[k];
+    d.play.history = [...d.play.history, ...incoming.play.history].sort((a, b) => a.t - b.t).slice(-200);
     return d;
   });
 }
