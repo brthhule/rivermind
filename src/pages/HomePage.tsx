@@ -1,0 +1,44 @@
+import { Link } from 'react-router-dom';
+import { Logo } from '../App';
+import { useUserData } from '../store/userData';
+
+const CARDS = [
+  { to: '/preflop', icon: '▦', title: 'Preflop charts', text: 'Browse 6-max 100bb strategies for every open, 3-bet, 4-bet and all-in spot, hand by hand.' },
+  { to: '/solver', icon: '⚙', title: 'Postflop solver', text: 'Solve any flop, turn or river spot with your own ranges and bet sizes, then explore the strategy tree.' },
+  { to: '/trainer', icon: '◎', title: 'Trainer', text: 'Drill preflop decisions or play solved postflop spots against the solver and get graded on every action.' },
+  { to: '/analyzer', icon: '☰', title: 'Hand analyzer', text: 'Paste hand histories to check your preflop decisions and see your equity on each street.' },
+  { to: '/equity', icon: '%', title: 'Equity calculator', text: 'Range vs range equity for up to four players on any board, with a hand-by-hand heatmap.' },
+  { to: '/pushfold', icon: '⇪', title: 'Push / fold', text: 'Short-stack shove and call ranges, solved to equilibrium for any stack depth.' },
+];
+
+export function HomePage() {
+  const d = useUserData();
+  const pf = d.stats.preflop, po = d.stats.postflop;
+  return (
+    <div className="col" style={{ gap: 20, maxWidth: 1100 }}>
+      <div className="row" style={{ gap: 14 }}>
+        <Logo size={44} />
+        <div>
+          <h1 style={{ fontSize: 28, margin: 0 }}>Rivermind</h1>
+          <p className="muted" style={{ margin: 0 }}>Game theory study tools for No Limit Hold'em. Everything runs on your machine, with no account needed.</p>
+        </div>
+      </div>
+      <div className="home-cards">
+        {CARDS.map((c) => (
+          <Link key={c.to} to={c.to} className="home-card">
+            <h2><span style={{ color: 'var(--accent)' }}>{c.icon}</span>{c.title}</h2>
+            <p>{c.text}</p>
+          </Link>
+        ))}
+      </div>
+      <div className="panel row" style={{ gap: 32 }}>
+        <div className="stat"><span className="muted small">Preflop drills</span><b>{pf.attempts}</b></div>
+        <div className="stat"><span className="muted small">Preflop score</span><b>{pf.attempts ? Math.round((pf.score / pf.attempts) * 100) : 0}%</b></div>
+        <div className="stat"><span className="muted small">Postflop drills</span><b>{po.attempts}</b></div>
+        <div className="stat"><span className="muted small">Saved ranges</span><b>{d.savedRanges.length}</b></div>
+        <div className="spacer" />
+        <Link to="/data"><button>Export or import my data</button></Link>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,72 @@
+import { HashRouter, NavLink, Route, Routes } from 'react-router-dom';
+import { HomePage } from './pages/HomePage';
+import { PreflopPage } from './pages/PreflopPage';
+import { SolverPage } from './pages/SolverPage';
+import { TrainerPage } from './pages/TrainerPage';
+import { AnalyzerPage } from './pages/AnalyzerPage';
+import { EquityPage } from './pages/EquityPage';
+import { PushFoldPage } from './pages/PushFoldPage';
+import { DataPage } from './pages/DataPage';
+import { useUserData } from './store/userData';
+
+export function Logo({ size = 28 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
+      <defs>
+        <linearGradient id="rm" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#35c2b0" />
+          <stop offset="1" stopColor="#7c6cf0" />
+        </linearGradient>
+      </defs>
+      <rect x="2" y="2" width="28" height="28" rx="8" fill="url(#rm)" />
+      <path d="M7 20c3-4 6-4 9 0s6 4 9 0" stroke="#0e1116" strokeWidth="2.6" fill="none" strokeLinecap="round" />
+      <path d="M7 13c3-4 6-4 9 0s6 4 9 0" stroke="#0e1116" strokeWidth="2.6" fill="none" strokeLinecap="round" opacity="0.55" />
+    </svg>
+  );
+}
+
+const NAV = [
+  { section: 'Study' },
+  { to: '/preflop', icon: '▦', label: 'Preflop charts' },
+  { to: '/solver', icon: '⚙', label: 'Postflop solver' },
+  { to: '/pushfold', icon: '⇪', label: 'Push / fold' },
+  { section: 'Practice' },
+  { to: '/trainer', icon: '◎', label: 'Trainer' },
+  { section: 'Review' },
+  { to: '/analyzer', icon: '☰', label: 'Hand analyzer' },
+  { to: '/equity', icon: '%', label: 'Equity calculator' },
+  { section: 'You' },
+  { to: '/data', icon: '⤓', label: 'My data' },
+] as const;
+
+export default function App() {
+  const data = useUserData();
+  return (
+    <HashRouter>
+      <div className={`app${data.settings.fourColor ? '' : ' two-color'}`}>
+        <aside className="sidebar">
+          <NavLink to="/" className="brand"><Logo /><span>Rivermind</span></NavLink>
+          <nav className="nav">
+            {NAV.map((n, i) => 'section' in n
+              ? <div key={i} className="nav-section">{n.section}</div>
+              : <NavLink key={n.to} to={n.to}><span style={{ width: 18, textAlign: 'center' }}>{n.icon}</span><span className="label">{n.label}</span></NavLink>)}
+          </nav>
+          <div className="spacer" />
+          <div className="small muted label" style={{ padding: '8px 10px' }}>Runs entirely in your browser. Save your work from My data.</div>
+        </aside>
+        <main className="main">
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/preflop" element={<PreflopPage />} />
+            <Route path="/solver" element={<SolverPage />} />
+            <Route path="/pushfold" element={<PushFoldPage />} />
+            <Route path="/trainer" element={<TrainerPage />} />
+            <Route path="/analyzer" element={<AnalyzerPage />} />
+            <Route path="/equity" element={<EquityPage />} />
+            <Route path="/data" element={<DataPage />} />
+          </Routes>
+        </main>
+      </div>
+    </HashRouter>
+  );
+}
