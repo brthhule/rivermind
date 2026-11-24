@@ -220,18 +220,18 @@ export function PracticePage() {
   return (
     <div className="practice">
       <div className="pbar">
-        <div className="col" style={{ gap: 0 }}>
+        <div className="col pbar-title" style={{ gap: 0 }}>
           <b>Play hands</b>
           <span className="muted small">{hand ? hand.spotName : spotLabel}{hand ? ` · ${street}` : ''}</span>
         </div>
-        <button className="ghost" onClick={() => setSettings(true)}>⚙ Settings</button>
+        <button className="ghost pbar-set" onClick={() => setSettings(true)} aria-label="Settings">⚙<span className="ico-label"> Settings</span></button>
         <div className="spacer" />
         <div className="pstat"><span>Hands</span><b>{session.hands}</b></div>
         <div className="pstat"><span>Best play</span><b>{acc}%</b></div>
         <div className="pstat"><span>EV lost / dec.</span><b>{session.decisions ? (session.evLoss / session.decisions).toFixed(2) : '0.00'}</b></div>
         <div className="pstat"><span>Net</span><b style={{ color: session.net >= 0 ? 'var(--good)' : 'var(--danger)' }}>{session.net >= 0 ? '+' : ''}{session.net.toFixed(1)}bb</b></div>
-        <button onClick={redo} disabled={!hand} title="Play this exact hand again: same cards and board">↺ Redo hand <span className="kbd">R</span></button>
-        <button className="primary" onClick={deal}>{hand ? 'New hand' : 'Deal'} <span className="kbd">Space</span></button>
+        <button className="pbar-redo" onClick={redo} disabled={!hand} title="Play this exact hand again: same cards and board">↺ Redo hand <span className="kbd">R</span></button>
+        <button className="primary pbar-deal" onClick={deal}>{hand ? 'New hand' : 'Deal'} <span className="kbd">Space</span></button>
       </div>
 
       <div className="pgrid">
