@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { NodeInfo, Hand } from '../solver/solver';
 import { classify, DRAWS, MADE } from '../engine/categories';
+import { EquityHelp } from './EquityHelp';
 
 interface Row { name: string; combos: number; share: number; eq: number; mix: number[] }
 
@@ -42,7 +43,7 @@ export function RangeBreakdown({ info, p, hands, labels, colors, names }: { info
 
   const table = (title: string, rows: Row[]) => (
     <table className="t">
-      <thead><tr><th>{title}</th><th>Combos</th><th>Range</th><th>Equity</th>{labels.length > 0 && <th style={{ width: '34%' }}>Strategy</th>}</tr></thead>
+      <thead><tr><th>{title}</th><th>Combos</th><th>Range</th><th>Equity <EquityHelp /></th>{labels.length > 0 && <th style={{ width: '34%' }}>Strategy</th>}</tr></thead>
       <tbody>
         {rows.map((r) => (
           <tr key={r.name}>
@@ -71,7 +72,7 @@ export function RangeBreakdown({ info, p, hands, labels, colors, names }: { info
           <span className="muted small">A hand can be in a made-hand row and a draw row at once. Hover a strategy bar for exact frequencies.</span>
         </div>
         <div className="col" style={{ gap: 6 }}>
-          <b>Equity distribution</b>
+          <b>Equity distribution <EquityHelp /></b>
           <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: 420 }} role="img" aria-label="Equity distribution of both ranges">
             {[0, 0.25, 0.5, 0.75, 1].map((y) => (
               <g key={y}>

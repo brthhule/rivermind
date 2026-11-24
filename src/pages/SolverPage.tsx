@@ -15,6 +15,7 @@ import { Board, CardText, Combo } from '../components/cards';
 import { actionColors, heat } from '../components/colors';
 import { Modal } from '../components/Modal';
 import { WhyPanel } from '../components/WhyPanel';
+import { EquityHelp } from '../components/EquityHelp';
 import { RangeBreakdown } from '../components/RangeBreakdown';
 
 const STREETS = ['flop', 'turn', 'river'] as const;
@@ -354,7 +355,7 @@ function Explorer() {
               <h2 style={{ margin: 0 }}>{p === 0 ? 'OOP' : 'IP'} {names[p]}{info.player === p && info.kind === 'action' ? ' to act' : ''}</h2>
               <div className="spacer" />
               <span className="chip">EV {isFinite(evRange) ? evRange.toFixed(2) : '–'}bb</span>
-              <span className="chip">Equity {isFinite(eqRange) ? (eqRange * 100).toFixed(1) : '–'}%</span>
+              <span className="chip">Equity {isFinite(eqRange) ? (eqRange * 100).toFixed(1) : '–'}% <EquityHelp /></span>
             </div>
             {labels.length > 0 && (
               <ActionList
@@ -407,7 +408,7 @@ function HandDetail({ info, p, hands, cls, colors, labels, onWhy }: { info: Node
       <h2 style={{ margin: 0 }}>{HAND_CLASSES[cls]}</h2>
       {rows.length === 0 ? <span className="muted">{classCombos(HAND_CLASSES[cls]).length ? 'Not in this range, or blocked by the board.' : ''}</span> : (
         <table className="t">
-          <thead><tr><th>Combo</th><th>Weight</th>{labels.length > 0 && <th style={{ width: '28%' }}>Strategy</th>}<th>EV</th><th>Equity</th></tr></thead>
+          <thead><tr><th>Combo</th><th>Weight</th>{labels.length > 0 && <th style={{ width: '28%' }}>Strategy</th>}<th>EV</th><th>Equity <EquityHelp /></th></tr></thead>
           <tbody>
             {rows.map(({ h, i }) => {
               const r = info.reach[p][i];

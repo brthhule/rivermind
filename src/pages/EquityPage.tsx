@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { expandRange, formatRange, parseRange, rangePercent, type Range } from '../engine/range';
+import { EquityHelp } from '../components/EquityHelp';
 import { monteCarloEquity, type EquityResult } from '../engine/equity';
 import { parseCards } from '../engine/cards';
 import { RangeEditor } from '../components/RangeEditor';
@@ -61,6 +62,7 @@ export function EquityPage() {
         <div>
           <h1>Equity calculator</h1>
           <p>Range against range, or exact hands, for two to four players. Results use 60,000 Monte Carlo samples with card removal.</p>
+          <EquityHelp text label="New to equity? Read the short guide" />
         </div>
       </div>
       <div className="study">

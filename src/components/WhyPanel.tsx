@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Explanation } from '../solver/solver';
 import { explainDecision } from '../engine/explain';
+import { EquityHelp } from './EquityHelp';
 import { RANKS, rankOf } from '../engine/cards';
 
 const pc = (x: number) => `${(x * 100).toFixed(1)}%`;
@@ -17,7 +18,7 @@ function EquityBreakdown({ e, opp }: { e: Explanation; opp: string }) {
   const next = e.board.length === 3 ? 'turn' : 'river';
   return (
     <div className="col" style={{ gap: 8 }}>
-      <span className="small">Your {pc(e.handEq)} equity against {opp}'s range, split two ways. Each split adds up to the total.</span>
+      <span className="small">Your {pc(e.handEq)} equity against {opp}'s range, split two ways. Each split adds up to the total. <EquityHelp /></span>
       {ranks.length > 0 && (
         <table className="t">
           <thead><tr><th>{next === 'turn' ? 'Turn' : 'River'} card</th><th>Cards</th><th>Your equity</th><th>Adds</th></tr></thead>
@@ -51,7 +52,7 @@ export function WhyPanel({ load, chosen, opp, title = 'Why?' }: { load: () => Pr
   const w = explainDecision(data, chosen, opp);
   return (
     <div className="why col" style={{ gap: 6 }}>
-      <div className="why-title">{title}</div>
+      <div className="row" style={{ gap: 8 }}><div className="why-title">{title}</div><div className="spacer" /><EquityHelp text /></div>
       <div className="why-summary">{w.summary}</div>
       <button className="link small" style={{ alignSelf: 'flex-start' }} onClick={() => setDetails((x) => !x)}>{details ? 'Hide details' : 'Show details'}</button>
       {details && (
