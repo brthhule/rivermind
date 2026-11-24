@@ -32,21 +32,26 @@ export function parseRange(text: string): Range {
     if (m) {
       tok = m[1];
       w = parseFloat(m[2]);
-      if (w > 1) w /= 100;
+      if (!isFinite(w) || w < 0 || w > 100) throw new Error(`Bad weight in ${tokRaw}`);
+      if (w > 1 || m[0].endsWith('%')) w /= 100;
     }
     tok = tok.replace(/^([2-9tjqka])([2-9tjqka])/i, (_s, a, b) => a.toUpperCase() + b.toUpperCase());
     const plus = tok.endsWith('+');
     if (plus) tok = tok.slice(0, -1);
     const dash = tok.split('-');
+    if (dash.length > 2 || (plus && dash.length > 1)) throw new Error(`Bad hand: ${tokRaw}`);
     const parse = (t: string) => {
+      if (!/^[2-9tjqka]{2}[so]?$/i.test(t)) throw new Error(`Bad hand: ${tokRaw}`);
       const hi = rIdx(t[0]), lo = rIdx(t[1]);
       const kind = (t[2] ?? '').toLowerCase() as '' | 's' | 'o';
-      if (hi < 0 || lo < 0) throw new Error(`Bad hand: ${t}`);
+      if (hi === lo && kind) throw new Error(`Bad hand: ${tokRaw} (pairs are neither suited nor offsuit)`);
       return { hi: Math.max(hi, lo), lo: Math.min(hi, lo), kind };
     };
     if (dash.length === 2) {
       const a = parse(dash[0]), b = parse(dash[1]);
-      if (a.hi === a.lo && b.hi === b.lo) {
+      const pairs = a.hi === a.lo && b.hi === b.lo;
+      if (!pairs && (a.hi !== b.hi || a.kind !== b.kind || a.hi === a.lo || b.hi === b.lo)) throw new Error(`Bad range: ${tokRaw} (both ends need the same top card and type, like A5s-A2s)`);
+      if (pairs) {
         for (let x = Math.min(a.hi, b.hi); x <= Math.max(a.hi, b.hi); x++) setLabel(r, label(x, x, ''), w);
       } else {
         for (let x = Math.min(a.lo, b.lo); x <= Math.max(a.lo, b.lo); x++) setLabel(r, label(a.hi, x, a.kind), w);

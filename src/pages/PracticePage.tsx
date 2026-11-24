@@ -143,6 +143,7 @@ export function PracticePage() {
 
   /** Start a hand. With a seed and settings, the exact same deal is replayed. */
   const start = useCallback((seed?: number, withPrefs?: PlayPrefs) => {
+    handRef.current?.cancel();
     const h = new PlayHand(withPrefs ?? data.play.prefs, practiceClient, () => force((x) => x + 1), seed);
     handRef.current = h;
     force((x) => x + 1);
@@ -151,6 +152,9 @@ export function PracticePage() {
   }, [data.play.prefs]);
   const deal = useCallback(() => start(), [start]);
   const redo = useCallback(() => { const h = handRef.current; if (h) start(h.seed, h.settings); }, [start]);
+
+  // leaving the page abandons the hand in progress and frees the solver
+  useEffect(() => () => { handRef.current?.cancel(); }, []);
 
   const recorded = useRef<PlayHand | null>(null);
   useEffect(() => {
@@ -178,7 +182,8 @@ export function PracticePage() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const h = handRef.current;
-      if ((e.target as HTMLElement)?.tagName === 'INPUT' || document.querySelector('.modal')) return;
+      const el = e.target as HTMLElement | null;
+      if (e.ctrlKey || e.metaKey || e.altKey || (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) || document.querySelector('.modal')) return;
       if (h?.status === 'hero' && /^[1-6]$/.test(e.key)) { const a = +e.key - 1; if (h.pending && a < h.pending.labels.length) h.choose(a); }
       else if (e.key === ' ' || e.key === 'Enter') {
         if (h?.status === 'feedback') { e.preventDefault(); h.proceed(); }

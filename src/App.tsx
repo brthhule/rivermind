@@ -1,5 +1,6 @@
-import { lazy, Suspense, type ComponentType } from 'react';
-import { HashRouter, NavLink, Route, Routes } from 'react-router-dom';
+import { lazy, Suspense, type ComponentType, type ReactNode } from 'react';
+import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { HomePage } from './pages/HomePage';
 import { useUserData } from './store/userData';
 
@@ -52,6 +53,11 @@ const NAV = [
   { to: '/data', icon: '⤓', label: 'My data' },
 ] as const;
 
+function PageBoundary({ children }: { children: ReactNode }) {
+  const loc = useLocation();
+  return <ErrorBoundary resetKey={loc.pathname}>{children}</ErrorBoundary>;
+}
+
 export default function App() {
   const data = useUserData();
   return (
@@ -68,6 +74,7 @@ export default function App() {
           <div className="small muted label" style={{ padding: '8px 10px' }}>Runs entirely in your browser. Save your work from My data.</div>
         </aside>
         <main className="main">
+          <PageBoundary>
           <Suspense fallback={<div className="muted" style={{ padding: 24 }}>Loading…</div>}>
           <Routes>
             <Route path="/" element={<HomePage />} />
@@ -84,6 +91,7 @@ export default function App() {
             <Route path="/builder" element={<RangeBuilderPage />} />
           </Routes>
           </Suspense>
+          </PageBoundary>
         </main>
       </div>
     </HashRouter>

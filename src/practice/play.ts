@@ -6,7 +6,7 @@ import { evaluate } from '../engine/evaluator';
 import { POSITIONS, type Pos, type HistItem, stateAfter, presetSpots } from '../engine/preflop';
 import type { Range } from '../engine/range';
 import { preflopWhy } from '../engine/preflopWhy';
-import { SolverClient } from '../solver/client';
+import { isAbort, type SolverClient } from '../solver/client';
 import type { Explanation, NodeInfo, SolverConfig } from '../solver/solver';
 import type { PlayPrefs, PlayRecord } from '../store/userData';
 
@@ -105,7 +105,19 @@ export class PlayHand {
   get villainCards() { return this.villainPos ? this.holes.get(this.villainPos) : undefined; }
   get board() { return this.runout.slice(0, this.boardShown); }
 
-  private changed() { this.onChange(); }
+  /** Set when the page abandons this hand (new hand, redo, leaving the page). */
+  private cancelled = false;
+  private changed() { if (!this.cancelled) this.onChange(); }
+  /** Throw out of the hand's async flow once it has been abandoned. */
+  private live() { if (this.cancelled) throw Object.assign(new Error('Hand abandoned'), { name: 'AbortError' }); }
+
+  /** Abandon the hand: it stops at its next step and never touches the solver again. */
+  cancel() {
+    if (this.cancelled) return;
+    this.cancelled = true;
+    this.resolve = null;
+    if (this.status === 'solving') this.client.cancel();
+  }
   private add(e: LogEntry) { this.log.push(e); this.changed(); }
   private seat(p: Pos, patch: Partial<SeatState>) { this.seats.set(p, { ...this.seats.get(p)!, ...patch }); }
   get settings() { return this.prefs; }
@@ -131,6 +143,7 @@ export class PlayHand {
     this.status = 'hero';
     this.changed();
     const a = await new Promise<number>((r) => { this.resolve = r; });
+    this.live();
     return a;
   }
 
@@ -173,8 +186,10 @@ export class PlayHand {
       if (p.start === 'preflop') await this.playPreflop();
       else await this.startFromPreset(p.start);
     } catch (e) {
+      if (this.cancelled || isAbort(e)) return;
+      console.error('Play hands error', e);
       this.status = 'error';
-      this.error = e instanceof Error ? e.message : String(e);
+      this.error = `Something went wrong with this hand: ${e instanceof Error ? e.message : String(e)}. Press Redo to try it again or deal a new hand.`;
       this.changed();
     }
   }
@@ -290,8 +305,15 @@ export class PlayHand {
     this.statusText = `Solving the ${STREET(n).toLowerCase()}…`;
     this.changed();
     const fast = this.prefs.accuracy === 'fast';
-    await this.client.solveAsync(cfg, fast ? 120 : 300, fast ? 1.5 : 0.6);
-    const hands = this.client.hands!;
+    this.live();
+    // Watchdog: on a slow device, stop refining after a while and play the strategy found so far.
+    const watchdog = setTimeout(() => this.client.stop(), fast ? 45_000 : 90_000);
+    try {
+      await this.client.solveAsync(cfg, fast ? 120 : 300, fast ? 1.5 : 0.6);
+    } finally { clearTimeout(watchdog); }
+    this.live();
+    const hands = this.client.hands;
+    if (!hands) throw new Error('The solver returned no hands');
     const find = (p: 0 | 1, c: [number, number]) => hands[p].findIndex((h) => (h.c1 === c[0] && h.c2 === c[1]) || (h.c1 === c[1] && h.c2 === c[0]));
     const hi = find(hero, hc), vi = find(vill, vc);
     if (hi < 0 || vi < 0) throw new Error('Hand missing from range');
@@ -299,6 +321,7 @@ export class PlayHand {
     const names = [hero === 0 ? 'You' : this.villainPos!, hero === 1 ? 'You' : this.villainPos!];
     for (;;) {
       const info: NodeInfo = await this.client.query(this.path);
+      this.live();
       if (info.kind === 'terminal') {
         const commit = info.commit;
         const heroCommit = commit[hero];
