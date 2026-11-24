@@ -121,7 +121,7 @@ function SettingsModal({ prefs, onClose }: { prefs: PlayPrefs; onClose: () => vo
             </div>
           </div>
         </div>
-        <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={prefs.autoObvious} onChange={(e) => setPref({ autoObvious: e.target.checked })} /> Auto-play obvious decisions (95%+) and skip pure folds</label>
+        <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={prefs.autoObvious} onChange={(e) => setPref({ autoObvious: e.target.checked })} /> Auto-play obvious continues (95%+ raise, call or check). Folds are always yours to make.</label>
         <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={prefs.rng} onChange={(e) => setPref({ rng: e.target.checked })} /> Show randomizer for mixed strategies</label>
         <span className="muted small">Settings apply from the next new hand and are saved with your data. Redo keeps the settings the hand was dealt with.</span>
         <div className="row"><div className="spacer" /><button className="primary" onClick={onClose}>Done</button></div>
@@ -154,12 +154,14 @@ export function PracticePage() {
 
   const recorded = useRef<PlayHand | null>(null);
   useEffect(() => {
-    if (!hand || hand.status !== 'done' || recorded.current === hand) return;
+    if (!hand || (hand.status !== 'done' && hand.status !== 'skipped') || recorded.current === hand) return;
     recorded.current = hand;
-    if (hand.decisions === 0 && hand.log.some((l) => /fold/i.test(l.text) && l.who === 'You') && hand.settings.autoObvious) {
+    // A hand that ended without a single decision for you (an automatic fold, or a walk in the
+    // big blind) is not practice: drop it and deal the next one straight away.
+    if (hand.status === 'skipped') {
       setSession((s) => ({ ...s, skipped: s.skipped + 1 }));
-      const t = setTimeout(deal, 350);
-      return () => clearTimeout(t);
+      setTimeout(() => { if (handRef.current === hand) deal(); }, 0);
+      return;
     }
     const rec = hand.record();
     updateData((d) => {
@@ -254,6 +256,13 @@ export function PracticePage() {
                 </div>
                 <ActionList items={hand.feedback.labels.map((l, k) => ({ label: l, color: colors[k], freq: hand.feedback!.freqs[k], ev: hand.feedback!.evs?.[k] }))} highlight={hand.feedback.chosen} />
                 {hand.feedback.explain && <WhyPanel load={hand.feedback.explain} chosen={hand.feedback.chosen} opp={hand.villainPos ?? 'Villain'} />}
+                {hand.feedback.preWhy && (
+                  <div className="why col" style={{ gap: 6 }}>
+                    <div className="why-title">Why?</div>
+                    <ul className="why-list">{hand.feedback.preWhy(hand.feedback.chosen).map((p, i) => <li key={i}>{p}</li>)}</ul>
+                    <span className="small muted">The chart below shows what every hand does here.</span>
+                  </div>
+                )}
                 {hand.feedback.grid && <StrategyPanel grid={hand.feedback.grid} chosen={hand.feedback.chosen} />}
               </>
             ) : hand?.status === 'hero' ? (

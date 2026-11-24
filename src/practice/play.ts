@@ -5,6 +5,7 @@ import { HAND_CLASSES, classCombos, classOf, comboId, comboStr, CLASS_INDEX, rng
 import { evaluate } from '../engine/evaluator';
 import { POSITIONS, type Pos, type HistItem, stateAfter, presetSpots } from '../engine/preflop';
 import type { Range } from '../engine/range';
+import { preflopWhy } from '../engine/preflopWhy';
 import { SolverClient } from '../solver/client';
 import type { Explanation, NodeInfo, SolverConfig } from '../solver/solver';
 import type { PlayPrefs, PlayRecord } from '../store/userData';
@@ -15,7 +16,7 @@ export const GRADE_TAG: Record<Grade, string> = { best: 'good', good: 'ok', inac
 
 export interface LogEntry { street: string; who: string; text: string; grade?: Grade; evLoss?: number }
 export interface StrategyGrid { labels: string[]; strat: number[][]; reach: number[]; heroClass: number }
-export interface PendingDecision { labels: string[]; freqs: number[]; evs?: number[]; pot: number; rng: number; street: string; grid?: StrategyGrid; explain?: () => Promise<Explanation> }
+export interface PendingDecision { labels: string[]; freqs: number[]; evs?: number[]; pot: number; rng: number; street: string; grid?: StrategyGrid; explain?: () => Promise<Explanation>; preWhy?: (chosen: number) => string[] }
 export interface SeatState { folded: boolean; action: string; bet: number; stack: number }
 export interface ReplaySeed { seed: number; prefs: PlayPrefs }
 export interface Feedback extends PendingDecision { chosen: number; grade: Grade; evLoss: number; rngPick: number }
@@ -59,7 +60,8 @@ export function gradeFor(evLoss: number, pot: number, freq: number): Grade {
 }
 
 export class PlayHand {
-  status: 'solving' | 'hero' | 'feedback' | 'done' | 'error' = 'solving';
+  /** 'skipped': the hand ended before you had a real decision; the page deals a new one. */
+  status: 'solving' | 'hero' | 'feedback' | 'done' | 'skipped' | 'error' = 'solving';
   statusText = 'Dealing…';
   error = '';
   log: LogEntry[] = [];
@@ -116,10 +118,11 @@ export class PlayHand {
     this.runout = [draw(), draw(), draw(), draw(), draw()];
   }
 
-  /** Waits for the hero's choice (or auto-plays obvious ones). */
+  /** Waits for the hero's choice (or auto-plays obvious continues). */
   private async heroDecision(d: PendingDecision): Promise<number> {
     const max = Math.max(...d.freqs);
-    if (this.prefs.autoObvious && max >= 0.95) {
+    // folds are always yours to make, even pure ones; only near-pure continues are auto-played
+    if (this.prefs.autoObvious && max >= 0.95 && d.labels[d.freqs.indexOf(max)] !== 'Fold') {
       const a = d.freqs.indexOf(max);
       this.add({ street: d.street, who: 'You', text: `${d.labels[a]} (auto, ${Math.round(max * 100)}% play)` });
       return a;
@@ -204,7 +207,7 @@ export class PlayHand {
       let a: number;
       if (sp.hero === this.heroPos) {
         const potNow = [...this.contrib.values()].reduce((s, x) => s + x, 0);
-        a = await this.heroDecision({ labels: sp.actions.map((x) => x.label), freqs, pot: potNow, rng: 1 + Math.floor(this.rand() * 100), street: 'Preflop', grid: { labels: sp.actions.map((x) => x.label), strat: sp.strat, reach: sp.reach, heroClass: cls } });
+        a = await this.heroDecision({ labels: sp.actions.map((x) => x.label), freqs, pot: potNow, rng: 1 + Math.floor(this.rand() * 100), street: 'Preflop', grid: { labels: sp.actions.map((x) => x.label), strat: sp.strat, reach: sp.reach, heroClass: cls }, preWhy: (ch) => preflopWhy(sp, cls, ch) });
       } else {
         a = this.sample(freqs);
         if (sp.actions[a].kind !== 'fold' || this.hist.some((h) => h.action > 0)) this.add({ street: 'Preflop', who: sp.hero, text: sp.actions[a].label });
@@ -344,7 +347,7 @@ export class PlayHand {
 
   private end(net: number, text: string, showdown: boolean) {
     this.result = { net: Math.round(net * 100) / 100, text, showdown };
-    this.status = 'done';
+    this.status = this.decisions === 0 ? 'skipped' : 'done';
     this.pending = null;
     this.add({ street: 'Result', who: 'Dealer', text });
   }
