@@ -11,6 +11,7 @@ import { HandReplayer } from '../components/HandReplayer';
 import { RangeGrid } from '../components/RangeGrid';
 import { Modal } from '../components/Modal';
 import { WhyPanel } from '../components/WhyPanel';
+import { PreflopWhyBox } from '../components/PreflopWhyBox';
 
 // seat slots around the oval, clockwise starting from the hero at the bottom (x%, y%)
 const SLOTS: [number, number][] = [[50, 86], [11, 66], [11, 22], [50, 5], [89, 22], [89, 66]];
@@ -261,13 +262,7 @@ export function PracticePage() {
                 </div>
                 <ActionList items={hand.feedback.labels.map((l, k) => ({ label: l, color: colors[k], freq: hand.feedback!.freqs[k], ev: hand.feedback!.evs?.[k] }))} highlight={hand.feedback.chosen} />
                 {hand.feedback.explain && <WhyPanel load={hand.feedback.explain} chosen={hand.feedback.chosen} opp={hand.villainPos ?? 'Villain'} />}
-                {hand.feedback.preWhy && (
-                  <div className="why col" style={{ gap: 6 }}>
-                    <div className="why-title">Why?</div>
-                    <ul className="why-list">{hand.feedback.preWhy(hand.feedback.chosen).map((p, i) => <li key={i}>{p}</li>)}</ul>
-                    <span className="small muted">The chart below shows what every hand does here.</span>
-                  </div>
-                )}
+                {hand.feedback.pre && <PreflopWhyBox sp={hand.feedback.pre.sp} cls={hand.feedback.pre.cls} chosen={hand.feedback.chosen} note="The chart below shows what every hand does here." />}
                 {hand.feedback.grid && <StrategyPanel grid={hand.feedback.grid} chosen={hand.feedback.chosen} />}
               </>
             ) : hand?.status === 'hero' ? (

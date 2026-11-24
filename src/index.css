@@ -235,3 +235,4 @@ button.whybtn:hover { background: var(--accent); color: #0e1116; }
 /* range builder */
 .builder { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 1100px) { .builder { grid-template-columns: 1fr; } }
+.why-summary { font-size: 14px; font-weight: 600; line-height: 1.45; }

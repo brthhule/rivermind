@@ -4,6 +4,8 @@ import type { ActionInsight, Explanation } from '../solver/solver';
 import { cardStr } from './cards';
 
 export interface WhyText {
+  /** one or two plain sentences: the play and the main reason */
+  summary: string;
   /** the one-paragraph answer to "why is the best play best (and why not mine)" */
   headline: string;
   /** supporting facts, most important first */
@@ -141,5 +143,47 @@ export function explainDecision(e: Explanation, chosen: number | null, opp = 'Vi
     if (isAggro(a.label) && a.add > 0) lines.push(`As a pure bluff it needs ${pct(a.add / (e.pot + a.add))} folds to break even.`);
     return { label: a.label, lines };
   });
-  return { headline, points, details };
+  return { summary: summarize(e, best.a, other, tiny, opp), headline, points, details };
+}
+
+const strength = (eq: number) => (eq >= 0.75 ? 'a very strong hand' : eq >= 0.55 ? 'a good hand' : eq >= 0.42 ? 'a medium-strength hand' : eq >= 0.28 ? 'a weak hand' : 'a hand that is usually behind');
+const sizeWord = (l: string) => (/^All-in/.test(l) ? 'All-in' : short(l));
+
+/** One or two sentences in poker terms: what to do and the single biggest reason. */
+function summarize(e: Explanation, b: ActionInsight, other: ActionInsight | undefined, tiny: boolean, opp: string): string {
+  const eq = e.handEq;
+  const f = foldFreq(b);
+  const cont = b.eqVsContinue ?? NaN;
+  const be = b.add > 0 ? b.add / (e.pot + b.add) : 0;
+  let s: string;
+  if (b.label === 'Fold') {
+    const need = e.toCall / (e.pot + e.toCall);
+    s = `Fold: you need ${pct(need)} equity to call but have only ${pct(eq)} against ${opp}'s bets, and raising doesn't get enough folds.`;
+  } else if (b.label === 'Call') {
+    const need = e.toCall / (e.pot + e.toCall);
+    const raise = e.actions.find((a) => isAggro(a.label) && a.eqVsContinue !== undefined);
+    s = `Call: ${eq >= need ? `you have ${pct(eq)} against ${opp}'s bets and only need ${pct(need)}` : `you are short on raw equity but your hand plays well on later streets`}.`;
+    if (raise && (raise.eqVsContinue ?? 1) < 0.45) s += ` Raising folds out ${opp}'s bluffs and only gets called by better hands.`;
+  } else if (b.label === 'Check') {
+    if (eq >= 0.55) s = `Check: you have ${strength(eq)}, but betting mostly folds out worse hands. Checking keeps ${opp}'s bluffs and weaker hands in.`;
+    else if (eq >= 0.4) s = `Check: ${strength(eq)} that wants to reach showdown cheaply. Betting gets called by better hands and folds out worse ones.`;
+    else s = `Check: your hand is too weak to bet for value and not a good bluff, so ${e.board.length === 5 ? 'check and give up or see a cheap showdown' : 'take the free card'}.`;
+  } else {
+    const verb = sizeWord(b.label);
+    if (isFinite(cont) && cont >= 0.5) s = `${verb} for value: worse hands still call, and you have ${pct(cont)} against the hands that continue.`;
+    else if (isFinite(f) && f >= be && eq < 0.4) s = `${verb} as a bluff: ${opp} folds ${pct(f)}, more than the ${pct(be)} this bet needs to profit.`;
+    else if (isFinite(f)) s = `${verb}: you win the pot right away ${pct(f)} of the time and still have ${pct(cont)} when called.`;
+    else s = `${verb}: it earns the most with ${strength(eq)}.`;
+    // sizing: why this size and not the other one
+    if (other && isAggro(other.label) && other.reply && b.reply) {
+      const smaller = b.add < other.add;
+      const co = other.eqVsContinue ?? NaN;
+      if (smaller && isFinite(co) && isFinite(cont) && cont - co >= 0.04) s += ` Smaller beats ${sizeWord(other.label)} because a big bet only gets called by hands that beat you.`;
+      else if (smaller) s += ` A smaller size keeps more worse hands in than ${sizeWord(other.label)}.`;
+      else if (eq >= 0.7) s += ` Bigger beats ${sizeWord(other.label)} because your hand wants to build the pot.`;
+      else s += ` Bigger beats ${sizeWord(other.label)} because it folds out more hands.`;
+    }
+  }
+  if (tiny && other) s += ` ${sizeWord(other.label)} is almost as good.`;
+  return s;
 }

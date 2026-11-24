@@ -92,3 +92,44 @@ export function preflopWhy(s: PreflopSpot, cls: number, chosen: number | null): 
   out.push(eq >= need ? `${pct(eq)} equity is more than the ${pct(need)} the call needs, so ${hand} calls the all-in.` : `${pct(eq)} equity is less than the ${pct(need)} the call needs, so ${hand} folds to the all-in.`);
   return out;
 }
+
+/** One or two sentences in poker terms for a preflop chart decision. */
+export function preflopSummary(s: PreflopSpot, cls: number): string {
+  const hand = HAND_CLASSES[cls];
+  const [kind, a, b] = s.key.split(':') as [string, Pos, Pos];
+  const best = top(s, cls);
+  const mixed = Math.max(...s.strat[cls]) < 0.8 ? ' The chart mixes here, so the other play is fine too.' : '';
+  const eq = s.villainRange ? equityVsRange(s.villainRange)[cls] : EQ_VS_RANDOM[cls];
+  if (kind === 'rfi') {
+    if (best.kind === 'fold') return `Fold: ${hand} is too weak to open from ${a} with ${5 - ['UTG', 'HJ', 'CO', 'BTN', 'SB'].indexOf(a)} players still to act.${mixed}`;
+    const vs3 = top(spot(`vs3bet:${a}:BB`), cls).kind;
+    return `Open: ${hand} is strong enough to raise from ${a}${vs3 === 'fold' ? ', but it folds if someone 3-bets' : vs3 === 'call' ? ', and it calls a 3-bet' : ', and it 4-bets if someone 3-bets'}.${mixed}`;
+  }
+  if (kind === 'vsopen') {
+    const [d, o] = [a, b];
+    if (best.kind === 'raise') {
+      const vs4 = top(spot(`vs4bet:${d}:${o}`), cls).kind;
+      return eq >= 0.5
+        ? `3-bet for value: ${hand} is ahead of most of ${o}'s opens${vs4 === 'allin' ? ' and happy to get all in' : vs4 === 'call' ? ' and calls a 4-bet' : ', but it folds to a 4-bet'}.${mixed}`
+        : `3-bet as a bluff: ${hand} blocks strong hands and plays fine when called, but it folds to a 4-bet.${mixed}`;
+    }
+    if (best.kind === 'call') return `Call: ${hand} is good enough to play against ${o}'s open but not strong enough to 3-bet.${mixed}`;
+    return `Fold: ${hand} does too poorly against ${o}'s opening range to call, and it is a poor 3-bet bluff.${mixed}`;
+  }
+  if (kind === 'vs3bet') {
+    const [o, d] = [a, b];
+    if (best.kind === 'raise') {
+      const vs5 = top(spot(`vs5bet:${o}:${d}`), cls).kind;
+      return vs5 === 'fold' ? `4-bet as a bluff: ${hand} blocks ${d}'s best hands but folds if they go all in.${mixed}` : `4-bet for value: ${hand} is happy to get all the money in.${mixed}`;
+    }
+    if (best.kind === 'call') return `Call: ${hand} is strong enough to continue against the 3-bet but not to 4-bet.${mixed}`;
+    return `Fold: ${hand} was fine to open but is near the bottom of your range, so it gives up to a 3-bet.${mixed}`;
+  }
+  const need = s.toCall / (s.pot + s.toCall);
+  if (kind === 'vs4bet') {
+    if (best.kind === 'allin') return `All-in: ${hand} is one of your strongest 3-bets.${mixed}`;
+    if (best.kind === 'call') return `Call: ${hand} can see a flop against the 4-bet, but going all-in mostly gets called by better hands.${mixed}`;
+    return `Fold: ${hand} can't continue against a 4-bet; it is too often dominated.${mixed}`;
+  }
+  return best.kind === 'call' ? `Call: you have ${pct(eq)} against the all-in range and need ${pct(need)}.${mixed}` : `Fold: you have ${pct(eq)} against the all-in range but need ${pct(need)}.${mixed}`;
+}
