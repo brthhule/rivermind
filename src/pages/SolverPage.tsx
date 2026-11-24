@@ -15,6 +15,7 @@ import { Board, CardText, Combo } from '../components/cards';
 import { actionColors, heat } from '../components/colors';
 import { Modal } from '../components/Modal';
 import { WhyPanel } from '../components/WhyPanel';
+import { RangeBreakdown } from '../components/RangeBreakdown';
 
 const STREETS = ['flop', 'turn', 'river'] as const;
 
@@ -363,6 +364,7 @@ function Explorer() {
           )}
         </div>
       </div>
+      <RangeBreakdown info={info} p={p} hands={hands} labels={labels} colors={colors} names={[names[0], names[1]]} />
     </div>
   );
 }

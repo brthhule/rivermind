@@ -21,6 +21,8 @@ export interface PlayRecord {
 export interface PlayStats { hands: number; decisions: number; evLoss: number; best: number; net: number }
 export interface PlayPrefs { start: string; heroSide: 'oop' | 'ip' | 'random'; heroPos: string; sizing: 'simple' | 'standard'; accuracy: 'fast' | 'standard'; autoObvious: boolean; rng: boolean }
 export interface ReportRow { flop: number[]; weight: number; oop: { labels: string[]; freqs: number[] }; ip: { labels: string[]; freqs: number[] }; ev: [number, number]; eq: [number, number] }
+export interface BuilderRecord { t: number; spot: string; score: number }
+export interface BuilderStats { attempts: number; scoreSum: number; history: BuilderRecord[] }
 export interface SavedReport { name: string; t: number; spot: string; pot: number; sizes: string; rows: ReportRow[] }
 export interface SavedSolverSetup { name: string; setup: unknown }
 export interface UserData {
@@ -32,6 +34,7 @@ export interface UserData {
   settings: { fourColor: boolean };
   play: { prefs: PlayPrefs; stats: PlayStats; history: PlayRecord[] };
   reports: SavedReport[];
+  builder: BuilderStats;
   updated: number;
 }
 
@@ -50,6 +53,7 @@ export const defaultData = (): UserData => ({
   settings: { fourColor: true },
   play: defaultPlay(),
   reports: [],
+  builder: { attempts: 0, scoreSum: 0, history: [] },
   updated: Date.now(),
 });
 
@@ -85,6 +89,7 @@ function normalize(x: any): UserData {
       history: Array.isArray(x.play?.history) ? x.play.history.slice(-200) : [],
     },
     reports: Array.isArray(x.reports) ? x.reports.slice(-10) : [],
+    builder: { ...d.builder, ...(x.builder ?? {}), history: Array.isArray(x.builder?.history) ? x.builder.history.slice(-300) : [] },
     updated: typeof x.updated === 'number' ? x.updated : Date.now(),
   };
 }
@@ -137,6 +142,9 @@ export function importData(text: string, mode: 'replace' | 'merge') {
     d.play.prefs = incoming.play.prefs;
     for (const k of ['hands', 'decisions', 'evLoss', 'best', 'net'] as const) d.play.stats[k] += incoming.play.stats[k];
     d.play.history = [...d.play.history, ...incoming.play.history].sort((a, b) => a.t - b.t).slice(-200);
+    d.builder.attempts += incoming.builder.attempts;
+    d.builder.scoreSum += incoming.builder.scoreSum;
+    d.builder.history = [...d.builder.history, ...incoming.builder.history].sort((a, b) => a.t - b.t).slice(-300);
     return d;
   });
 }

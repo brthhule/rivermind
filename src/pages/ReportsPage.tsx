@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { flopSubset, texture } from '../engine/flops';
 import { presetSpots } from '../engine/preflop';
-import { reportClient } from '../solver/client';
+import { reportClient, SolverClient } from '../solver/client';
 import type { NodeInfo, SolverConfig } from '../solver/solver';
 import { updateData, useUserData, type ReportRow, type SavedReport } from '../store/userData';
 import { Board } from '../components/cards';
@@ -52,6 +52,7 @@ export function ReportsPage() {
   const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>({ k: 'flop', dir: 1 });
   const [filter, setFilter] = useState('all');
   const stop = useRef(false);
+  const poolRef = useRef<SolverClient[]>([]);
 
   const run = async () => {
     const spot = presets.find((p) => p.name === spotName)!;
@@ -63,28 +64,42 @@ export function ReportsPage() {
     const rows: ReportRow[] = [];
     const rep: SavedReport = { name: `${spot.name} · ${flops.length} flops`, t: Date.now(), spot: spot.name, pot: spot.pot, sizes: betSize, rows };
     setReport({ ...rep });
-    for (let i = 0; i < flops.length && !stop.current; i++) {
-      const f = flops[i];
-      setProgress({ done: i, total: flops.length, current: f.key });
+    // independent flops: solve several at once, one worker per spare CPU core
+    const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 2;
+    const pool = Array.from({ length: Math.max(1, Math.min(6, cores - 1, flops.length)) }, (_, k) => (k === 0 ? reportClient : new SolverClient()));
+    poolRef.current = pool;
+    let next = 0, started = 0;
+    const byIdx: (ReportRow | undefined)[] = [];
+    const solveOne = async (client: SolverClient, f: (typeof flops)[number]) => {
       const cfg: SolverConfig = {
         board: f.cards, pot: spot.pot, stack: spot.stack, ranges: [spot.oopRange, spot.ipRange],
         sizes: { flop: [s(sizes), s(sizes)], turn: [s([0.66]), s([0.66])], river: [s([0.75]), s([0.75])] },
         maxRaises: 1, allIn: true, allInThreshold: 0.67, lastStreet: 3,
       };
-      try {
-        await reportClient.solveAsync(cfg, 120, 1.5);
-        const root = await reportClient.query([]);
-        const ipNode = await reportClient.query([0]);
-        const a = rangeStats(root, 0), b = rangeStats(root, 1);
-        rows.push({
-          flop: f.cards, weight: f.weight,
-          oop: { labels: root.labels!.map(short), freqs: actionFreqs(root) },
-          ip: { labels: ipNode.labels!.map(short), freqs: ipNode.kind === 'action' ? actionFreqs(ipNode) : [] },
-          ev: [a.ev, b.ev], eq: [a.eq, b.eq],
-        });
-        setReport({ ...rep, rows: [...rows] });
-      } catch (e) { console.warn(e); }
-    }
+      await client.solveAsync(cfg, 120, 1.5);
+      const root = await client.query([]);
+      const ipNode = await client.query([0]);
+      const a = rangeStats(root, 0), b = rangeStats(root, 1);
+      return {
+        flop: f.cards, weight: f.weight,
+        oop: { labels: root.labels!.map(short), freqs: actionFreqs(root) },
+        ip: { labels: ipNode.labels!.map(short), freqs: ipNode.kind === 'action' ? actionFreqs(ipNode) : [] },
+        ev: [a.ev, b.ev] as [number, number], eq: [a.eq, b.eq] as [number, number],
+      };
+    };
+    await Promise.all(pool.map(async (client) => {
+      while (next < flops.length && !stop.current) {
+        const i = next++, f = flops[i];
+        setProgress({ done: rows.length, total: flops.length, current: `${++started} of ${flops.length} started` });
+        try {
+          byIdx[i] = await solveOne(client, f);
+          rows.splice(0, rows.length, ...byIdx.filter((r): r is ReportRow => !!r));
+          setReport({ ...rep, rows: [...rows] });
+        } catch (e) { if (!stop.current) console.warn(e); }
+      }
+    }));
+    pool.slice(1).forEach((c) => c.dispose());
+    poolRef.current = [];
     setProgress((p) => ({ ...p, done: rows.length }));
     setRunning(false);
     if (rows.length) updateData((d) => { d.reports = [...d.reports.filter((r) => r.name !== rep.name), { ...rep, rows }].slice(-10); });
@@ -132,7 +147,7 @@ export function ReportsPage() {
           </select>
         </label>
         <label className="field">Flop bet sizes (% pot)<input value={betSize} onChange={(e) => setBetSize(e.target.value)} disabled={running} style={{ width: 100 }} /></label>
-        {running ? <button className="danger" onClick={() => { stop.current = true; reportClient.stop(); }}>■ Stop</button> : <button className="primary" onClick={run}>▶ Run report</button>}
+        {running ? <button className="danger" onClick={() => { stop.current = true; poolRef.current.forEach((c) => c.stop()); }}>■ Stop</button> : <button className="primary" onClick={run}>▶ Run report</button>}
         {data.reports.length > 0 && !running && (
           <select value="" onChange={(e) => setReport(data.reports.find((r) => r.name === e.target.value) ?? null)}>
             <option value="" disabled>Saved reports…</option>

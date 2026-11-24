@@ -16,6 +16,7 @@ const AnalyzerPage = page(() => import('./pages/AnalyzerPage'), 'AnalyzerPage');
 const EquityPage = page(() => import('./pages/EquityPage'), 'EquityPage');
 const PushFoldPage = page(() => import('./pages/PushFoldPage'), 'PushFoldPage');
 const DataPage = page(() => import('./pages/DataPage'), 'DataPage');
+const RangeBuilderPage = page(() => import('./pages/RangeBuilderPage'), 'RangeBuilderPage');
 
 export function Logo({ size = 28 }: { size?: number }) {
   return (
@@ -43,6 +44,7 @@ const NAV = [
   { section: 'Practice' },
   { to: '/practice', icon: '♠', label: 'Play hands' },
   { to: '/trainer', icon: '◎', label: 'Spot drills' },
+  { to: '/builder', icon: '✎', label: 'Range builder' },
   { section: 'Review' },
   { to: '/analyzer', icon: '☰', label: 'Hand analyzer' },
   { to: '/equity', icon: '%', label: 'Equity calculator' },
@@ -79,6 +81,7 @@ export default function App() {
             <Route path="/analyzer" element={<AnalyzerPage />} />
             <Route path="/equity" element={<EquityPage />} />
             <Route path="/data" element={<DataPage />} />
+            <Route path="/builder" element={<RangeBuilderPage />} />
           </Routes>
           </Suspense>
         </main>

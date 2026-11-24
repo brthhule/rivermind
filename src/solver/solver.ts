@@ -686,7 +686,12 @@ export class Solver {
       this.blocked(p, reach[1 - p], b, 1);
       return v.map((x, h) => (b[h] > 0 ? x / b[h] + half : NaN));
     };
-    for (const p of [0, 1] as const) ev[p] = norm(p, this.cfr(node, p, reach[p], reach[1 - p], 2).slice(0, this.hands[p].length));
+    let actVals: Float32Array | null = null;
+    for (const p of [0, 1] as const) {
+      ev[p] = norm(p, this.cfr(node, p, reach[p], reach[1 - p], 2).slice(0, this.hands[p].length));
+      // the acting player's pass already computed every action's value: keep them instead of re-walking the children
+      if (node.k === 0 && p === node.player) actVals = this.buf(0).vals.slice(0, node.labels.length * node.n);
+    }
     const info: NodeInfo = { kind: node.k === 0 ? 'action' : node.k === 1 ? 'chance' : 'terminal', board, pot, commit: node.commit, reach, equity, ev };
     if (node.k === 0) {
       const p = node.player, n = node.n;
@@ -695,10 +700,7 @@ export class Solver {
       info.amounts = node.amounts;
       info.strategy = this.strategy(node, true);
       const aev = new Float32Array(node.labels.length * n);
-      node.children.forEach((child, a) => {
-        const v = norm(p, this.cfr(child, p, reach[p], reach[1 - p], 2).slice(0, n));
-        aev.set(v, a * n);
-      });
+      node.children.forEach((_, a) => aev.set(norm(p, actVals!.subarray(a * n, (a + 1) * n)), a * n));
       info.actionEv = aev;
       info.locked = !!node.locked;
     } else if (node.k === 1) info.cards = node.cards;

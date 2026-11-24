@@ -80,6 +80,15 @@ export class SolverClient {
 
   stop() { this.worker?.postMessage({ type: 'stop' }); }
 
+  /** Shut the worker down (it restarts on next use). */
+  dispose() {
+    this.worker?.terminate();
+    this.worker = null;
+    this.pending.forEach((p) => p.reject(new Error('Solver stopped')));
+    this.pending.clear();
+    this.status = { state: 'idle', iteration: 0, exploit: NaN, elapsed: 0 };
+  }
+
   private request<T>(msg: object): Promise<T> {
     const reqId = ++this.reqId;
     return new Promise<T>((resolve, reject) => {

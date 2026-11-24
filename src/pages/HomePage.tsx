@@ -8,6 +8,7 @@ const CARDS = [
   { to: '/practice', icon: '♠', title: 'Play hands', text: 'Play full hands from preflop to river against a strategy that re-solves every street. Every decision is scored by EV lost.' },
   { to: '/reports', icon: '▤', title: 'Aggregate reports', text: 'Solve a spot across dozens of representative flops and compare bet frequencies, equity and EV by texture.' },
   { to: '/trainer', icon: '◎', title: 'Spot drills', text: 'Rapid-fire preflop decisions, or replay your latest solved spot against the solver.' },
+  { to: '/builder', icon: '✎', title: 'Range builder', text: 'Paint a full preflop range from memory and get scored against the chart, with your biggest misses.' },
   { to: '/icm', icon: '🏆', title: 'ICM tools', text: 'Tournament equity for any stacks and payouts, plus push/fold ranges that account for ICM.' },
   { to: '/analyzer', icon: '☰', title: 'Hand analyzer', text: 'Upload hand histories to grade your preflop play, check equity on each street, and replay hands.' },
   { to: '/equity', icon: '%', title: 'Equity calculator', text: 'Range vs range equity for up to four players on any board, with a hand-by-hand heatmap.' },
