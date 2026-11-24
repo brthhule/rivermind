@@ -21,6 +21,8 @@ export interface PlayRecord {
 export interface PlayStats { hands: number; decisions: number; evLoss: number; best: number; net: number }
 export interface PlayPrefs { start: string; heroSide: 'oop' | 'ip' | 'random'; heroPos: string; sizing: 'simple' | 'standard'; accuracy: 'fast' | 'standard'; autoObvious: boolean; rng: boolean }
 export interface ReportRow { flop: number[]; weight: number; oop: { labels: string[]; freqs: number[] }; ip: { labels: string[]; freqs: number[] }; ev: [number, number]; eq: [number, number] }
+export interface BuilderRecord { t: number; spot: string; score: number }
+export interface BuilderStats { attempts: number; scoreSum: number; history: BuilderRecord[] }
 export interface SavedReport { name: string; t: number; spot: string; pot: number; sizes: string; rows: ReportRow[] }
 export interface SavedSolverSetup { name: string; setup: unknown }
 export interface UserData {
@@ -32,6 +34,7 @@ export interface UserData {
   settings: { fourColor: boolean };
   play: { prefs: PlayPrefs; stats: PlayStats; history: PlayRecord[] };
   reports: SavedReport[];
+  builder: BuilderStats;
   updated: number;
 }
 
@@ -50,6 +53,7 @@ export const defaultData = (): UserData => ({
   settings: { fourColor: true },
   play: defaultPlay(),
   reports: [],
+  builder: { attempts: 0, scoreSum: 0, history: [] },
   updated: Date.now(),
 });
 
@@ -158,6 +162,13 @@ function normalize(x: any): UserData {
       history: arr(play.history).map(playRecord).filter((r): r is PlayRecord => !!r).slice(-200),
     },
     reports: arr(x.reports).map(report).filter((r): r is SavedReport => !!r).slice(-10),
+    builder: (() => {
+      const o = obj(x.builder);
+      return {
+        attempts: Math.max(0, num(o.attempts)), scoreSum: Math.max(0, num(o.scoreSum)),
+        history: arr(o.history).filter((r) => r && typeof r === 'object').map((r) => ({ t: num(r.t), spot: str(r.spot), score: num(r.score) })).slice(-300),
+      };
+    })(),
     updated: num(x.updated, Date.now()),
   };
 }
@@ -234,6 +245,14 @@ export function importData(text: string, mode: 'replace' | 'merge') {
       d.play.stats.best = Math.round(d.play.stats.best);
     }
     d.play.history = [...d.play.history, ...freshHands].sort((a, b) => a.t - b.t).slice(-200);
+    const haveB = new Set(d.builder.history.map((r) => `${r.t}|${r.spot}`));
+    const freshB = incoming.builder.history.filter((r) => !haveB.has(`${r.t}|${r.spot}`));
+    if (freshB.length > 0 || incoming.builder.history.length === 0) {
+      const share = incoming.builder.history.length ? freshB.length / incoming.builder.history.length : 1;
+      d.builder.attempts += Math.round(incoming.builder.attempts * share);
+      d.builder.scoreSum += incoming.builder.scoreSum * share;
+    }
+    d.builder.history = [...d.builder.history, ...freshB].sort((a, b) => a.t - b.t).slice(-300);
     return d;
   });
 }

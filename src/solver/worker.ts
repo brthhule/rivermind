@@ -3,6 +3,8 @@ import { Solver, type SolverConfig } from './solver';
 
 let solver: Solver | null = null;
 let stopFlag = false;
+// node answers for the current solution (browsing back and forth repeats queries)
+const queryCache = new Map<string, unknown>();
 const MAX_MB = 1200;
 
 const post = (m: unknown, transfer: Transferable[] = []) => (self as unknown as DedicatedWorkerGlobalScope).postMessage(m, transfer);
@@ -10,6 +12,7 @@ const post = (m: unknown, transfer: Transferable[] = []) => (self as unknown as 
 async function solve(config: SolverConfig, maxIterations: number, targetPct: number) {
   stopFlag = false;
   solver = null;
+  queryCache.clear();
   const s = new Solver(config);
   s.build(false);
   const mb = s.estimateMB();
@@ -53,7 +56,9 @@ self.onmessage = async (e: MessageEvent) => {
       post({ type: 'explain', reqId: m.reqId, info: solver.explain(m.path, m.hand) });
     } else if (m.type === 'query') {
       if (!solver) throw new Error('No solution loaded');
-      const info = solver.query(m.path);
+      const key = m.path.join(',');
+      let info = queryCache.get(key);
+      if (!info) { info = solver.query(m.path); if (queryCache.size > 200) queryCache.clear(); queryCache.set(key, info); }
       post({ type: 'node', reqId: m.reqId, info });
     }
   } catch (err) {

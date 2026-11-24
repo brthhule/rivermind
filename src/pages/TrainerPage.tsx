@@ -11,6 +11,16 @@ import { Board, PlayingCard } from '../components/cards';
 import { ActionList } from '../components/ActionList';
 import { actionColors } from '../components/colors';
 import { RangeGrid } from '../components/RangeGrid';
+import { WhyPanel } from '../components/WhyPanel';
+import { preflopWhy } from '../engine/preflopWhy';
+
+/** Solver-based explanation for the drilled hand at the current node. */
+function DrillWhy({ path, hand, chosen, opp }: { path: number[]; hand: number; chosen: number; opp: string }) {
+  const key = path.join(',');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const load = useCallback(() => solverClient.explain(path, hand), [key, hand]);
+  return <WhyPanel load={load} chosen={chosen} opp={opp} />;
+}
 
 const KINDS = [
   { k: 'rfi', label: 'First in (open or fold)' },
@@ -42,7 +52,10 @@ const gradeLabel: Record<string, string> = { good: 'Best', ok: 'Fine', inaccurac
 function PreflopDrill() {
   const data = useUserData();
   const prefs = data.drills;
-  const keys = useMemo(() => spotKeys(prefs.preflopKinds, prefs.positions), [prefs.preflopKinds, prefs.positions]);
+  // key on the contents: every data save clones the arrays, which must not deal a new hand
+  const kindsKey = prefs.preflopKinds.join(','), posKey = prefs.positions.join(',');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const keys = useMemo(() => spotKeys(prefs.preflopKinds, prefs.positions), [kindsKey, posKey]);
   const [q, setQ] = useState<{ sp: PreflopSpot; cls: number; cards: [number, number] } | null>(null);
   const [answer, setAnswer] = useState<number | null>(null);
   const [session, setSession] = useState({ n: 0, score: 0 });
@@ -124,6 +137,11 @@ function PreflopDrill() {
               <div className="feedback col">
                 <div className="row"><span className={`tag ${grade}`}>{gradeLabel[grade]}</span><span>You chose {q.sp.actions[answer].label}.</span></div>
                 <ActionList items={q.sp.actions.map((a, k) => ({ label: a.label, color: colors[k], freq: row[k] }))} highlight={answer} />
+                <div className="why col" style={{ gap: 6 }}>
+                  <div className="why-title">Why?</div>
+                  <ul className="why-list">{preflopWhy(q.sp, q.cls, answer).map((p, i) => <li key={i}>{p}</li>)}</ul>
+                  <span className="small muted">The full range for this spot is below.</span>
+                </div>
                 <div className="row"><button className="primary" onClick={next}>Next hand <span className="kbd">Space</span></button></div>
               </div>
             )}
@@ -334,6 +352,7 @@ function PostflopDrill() {
               <span>{hand.feedback.loss < 0.005 ? 'Highest EV choice.' : `You gave up ${hand.feedback.loss.toFixed(2)}bb of EV.`}</span>
             </div>
             <ActionList items={hand.feedback.labels.map((l, k) => ({ label: l, color: colors[k], freq: hand.feedback!.freqs[k], ev: hand.feedback!.evs[k] }))} highlight={hand.feedback.chosen} />
+            <DrillWhy path={hand.path} hand={hand.hands[hand.hero]} chosen={hand.feedback.chosen} opp={names[1 - hand.hero]} />
             <div><button className="primary" onClick={proceed}>Continue <span className="kbd">Space</span></button></div>
           </div>
         )}

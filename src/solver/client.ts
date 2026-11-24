@@ -124,6 +124,13 @@ export class SolverClient {
 
   stop() { this.worker?.postMessage({ type: 'stop' }); }
 
+  /** Shut the worker down (it restarts on next use). */
+  dispose() {
+    this.solveId++;
+    this.kill('Solver stopped');
+    this.status = { state: 'idle', iteration: 0, exploit: NaN, elapsed: 0 };
+  }
+
   private request<T>(msg: object): Promise<T> {
     const reqId = ++this.reqId;
     return new Promise<T>((resolve, reject) => {
