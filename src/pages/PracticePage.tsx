@@ -142,42 +142,58 @@ export function PracticePage() {
   const [tab, setTab] = useState<'log' | 'recent'>('log');
   const hand = handRef.current;
 
+  // Stats count each decision as soon as you make it, so the bar moves even if you start a
+  // new hand before the current one finishes. Hands and net are added when a hand ends.
+  const counted = useRef(new WeakMap<PlayHand, { decisions: number; evLoss: number; best: number; hand: boolean; ended: boolean }>());
+  const countHand = useCallback((h: PlayHand) => {
+    let c = counted.current.get(h);
+    if (!c) { c = { decisions: 0, evLoss: 0, best: 0, hand: false, ended: false }; counted.current.set(h, c); }
+    const dd = h.decisions - c.decisions, de = h.evLoss - c.evLoss, db = h.bestCount - c.best;
+    const ended = h.status === 'done' && !c.ended;
+    // a hand counts once you have made a decision in it, whether or not you play it to the end
+    const newHand = h.decisions > 0 && !c.hand;
+    if (!dd && !ended && !newHand) return;
+    c.decisions = h.decisions; c.evLoss = h.evLoss; c.best = h.bestCount;
+    if (newHand) c.hand = true;
+    const rec = ended ? h.record() : null;
+    if (ended) c.ended = true;
+    updateData((d) => {
+      if (newHand) d.play.stats.hands++;
+      d.play.stats.decisions += dd;
+      d.play.stats.evLoss += de;
+      d.play.stats.best += db;
+      if (rec) { d.play.stats.net += rec.net; d.play.history = [...d.play.history, rec].slice(-200); }
+    });
+    setSession((s) => ({ ...s, hands: s.hands + (newHand ? 1 : 0), decisions: s.decisions + dd, evLoss: s.evLoss + de, best: s.best + db, net: s.net + (rec ? rec.net : 0) }));
+  }, []);
+
   /** Start a hand. With a seed and settings, the exact same deal is replayed. */
   const start = useCallback((seed?: number, withPrefs?: PlayPrefs) => {
-    handRef.current?.cancel();
+    const old = handRef.current;
+    if (old) { countHand(old); old.cancel(); }
     const h = new PlayHand(withPrefs ?? data.play.prefs, practiceClient, () => force((x) => x + 1), seed);
     handRef.current = h;
     force((x) => x + 1);
     h.run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.play.prefs]);
+  }, [data.play.prefs, countHand]);
   const deal = useCallback(() => start(), [start]);
   const redo = useCallback(() => { const h = handRef.current; if (h) start(h.seed, h.settings); }, [start]);
 
   // leaving the page abandons the hand in progress and frees the solver
   useEffect(() => () => { handRef.current?.cancel(); }, []);
 
-  const recorded = useRef<PlayHand | null>(null);
+  const skippedSeen = useRef<PlayHand | null>(null);
   useEffect(() => {
-    if (!hand || (hand.status !== 'done' && hand.status !== 'skipped') || recorded.current === hand) return;
-    recorded.current = hand;
+    if (!hand) return;
+    countHand(hand);
     // A hand that ended without a single decision for you (an automatic fold, or a walk in the
     // big blind) is not practice: drop it and deal the next one straight away.
-    if (hand.status === 'skipped') {
+    if (hand.status === 'skipped' && skippedSeen.current !== hand) {
+      skippedSeen.current = hand;
       setSession((s) => ({ ...s, skipped: s.skipped + 1 }));
       setTimeout(() => { if (handRef.current === hand) deal(); }, 0);
-      return;
     }
-    const rec = hand.record();
-    updateData((d) => {
-      d.play.stats.hands++;
-      d.play.stats.decisions += hand.decisions;
-      d.play.stats.evLoss += hand.evLoss;
-      d.play.stats.best += hand.bestCount;
-      d.play.stats.net += rec.net;
-      d.play.history = [...d.play.history, rec].slice(-200);
-    });
-    setSession((s) => ({ ...s, hands: s.hands + 1, decisions: s.decisions + hand.decisions, evLoss: s.evLoss + hand.evLoss, best: s.best + hand.bestCount, net: s.net + rec.net }));
   });
 
   useEffect(() => {
