@@ -77,7 +77,7 @@ export function preflopWhy(s: PreflopSpot, cls: number, chosen: number | null): 
     if (best.kind === 'raise') {
       const next = spot(`vs5bet:${o}:${d}`);
       const t = top(next, cls).kind;
-      out.push(`If ${d} goes all-in over the 4-bet, the chart ${mix(next, cls)}. ${t === 'fold' ? `So ${hand} 4-bets as a bluff: it blocks the strongest hands but cannot call a jam.` : `So ${hand} 4-bets for value and is happy to get the money in.`}`);
+      out.push(`If ${d} goes all-in over the 4-bet, the chart ${mix(next, cls)}. ${t !== 'fold' ? `So ${hand} 4-bets for value and is happy to get the money in.` : eq >= 0.5 ? `${hand} 4-bets for value against the 3-bets, but the all-in range is narrow enough that this chart lets it go.` : `So ${hand} 4-bets as a bluff: it blocks the strongest hands but cannot call a jam.`}`);
     } else if (best.kind === 'call') out.push(`${hand} is strong enough to continue against the 3-bet but not to 4-bet: 4-bets are the very top hands plus a few blocker bluffs.`);
     else out.push(`${hand} opened profitably but is near the bottom of the opening range, so it gives up to a 3-bet.`);
     return out;
@@ -120,7 +120,10 @@ export function preflopSummary(s: PreflopSpot, cls: number): string {
     const [o, d] = [a, b];
     if (best.kind === 'raise') {
       const vs5 = top(spot(`vs5bet:${o}:${d}`), cls).kind;
-      return vs5 === 'fold' ? `4-bet as a bluff: ${hand} blocks ${d}'s best hands but folds if they go all in.${mixed}` : `4-bet for value: ${hand} is happy to get all the money in.${mixed}`;
+      if (vs5 !== 'fold') return `4-bet for value: ${hand} is happy to get all the money in.${mixed}`;
+      return eq >= 0.5
+        ? `4-bet for value: ${hand} is ahead of ${d}'s 3-bets, though this chart folds it if they go all in (their all-in range is very narrow).${mixed}`
+        : `4-bet as a bluff: ${hand} blocks ${d}'s best hands but folds if they go all in.${mixed}`;
     }
     if (best.kind === 'call') return `Call: ${hand} is strong enough to continue against the 3-bet but not to 4-bet.${mixed}`;
     return `Fold: ${hand} was fine to open but is near the bottom of your range, so it gives up to a 3-bet.${mixed}`;
