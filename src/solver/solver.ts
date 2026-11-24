@@ -2,6 +2,7 @@
 // chance nodes for turn/river cards. Showdowns use an O(n) sorted sweep with
 // card-removal correction, averaged over every runout of the board when the
 // tree stops betting before the river ("check down" the remaining streets).
+import { classify } from '../engine/categories';
 import { evaluate } from '../engine/evaluator';
 import { cardStr } from '../engine/cards';
 import { expandRange, type Range } from '../engine/range';
@@ -104,6 +105,11 @@ export interface Explanation {
   /** share of each range with equity >= 75% ("very strong"), [actor, opponent] */
   strongShare: [number, number];
   actions: ActionInsight[];
+  /** where the hand's equity comes from: by next card (flop/turn) and by opponent hand type */
+  breakdown: {
+    byCard: { card: number; eq: number; w: number }[];
+    byType: { name: string; share: number; eq: number }[];
+  };
 }
 
 export const MAX_NODES = 1_500_000;
@@ -728,6 +734,42 @@ export class Solver {
     return tot > 1e-12 ? win / tot : NaN;
   }
 
+  /** Splits one hand's equity by the next board card and by the opponent's made hand / draw. */
+  private equityBreakdown(board: number[], p: 0 | 1, h: number, oppR: Float32Array): Explanation['breakdown'] {
+    const q = (1 - p) as 0 | 1;
+    const hand = this.hands[p][h];
+    const byCard: Explanation['breakdown']['byCard'] = [];
+    if (board.length < 5) {
+      for (let c = 0; c < 52; c++) {
+        if (board.includes(c) || c === hand.c1 || c === hand.c2) continue;
+        const r = this.chanceReach(oppR, q, c);
+        let w = 0;
+        for (let o = 0; o < r.length; o++) w += r[o];
+        if (w <= 1e-9) continue;
+        byCard.push({ card: c, eq: this.handEquity([...board, c], p, h, r), w });
+      }
+    }
+    const groups = new Map<string, Float32Array>();
+    let total = 0;
+    this.hands[q].forEach((o, i) => {
+      const r = oppR[i];
+      if (!r) return;
+      total += r;
+      const c = classify(o.c1, o.c2, board);
+      // made hand first; draws only for hands with no pair or better
+      const name = (c.made === 'No made hand' || c.made === 'Ace high') && c.draws.length ? c.draws[0] : c.made;
+      let g = groups.get(name);
+      if (!g) { g = new Float32Array(oppR.length); groups.set(name, g); }
+      g[i] = r;
+    });
+    const byType = [...groups].map(([name, g]) => {
+      let w = 0;
+      for (let i = 0; i < g.length; i++) w += g[i];
+      return { name, share: total ? w / total : 0, eq: this.handEquity(board, p, h, g) };
+    }).sort((a, b) => b.share - a.share);
+    return { byCard, byType };
+  }
+
   /** Data behind a decision: range strength, the hand's standing, and how the opponent answers each action. */
   explain(path: number[], h: number): Explanation {
     const { node, reach } = this.walk(path);
@@ -789,6 +831,7 @@ export class Solver {
       rangeEq: [avg(eqP, reach[p]), avg(eqQ, reach[q])],
       strongShare: [avg(eqP, reach[p], strong), avg(eqQ, reach[q], strong)],
       actions,
+      breakdown: this.equityBreakdown(node.board, p, h, oppR),
     };
   }
 
