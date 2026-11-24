@@ -15,7 +15,7 @@ interface Props {
   cell: (i: number) => CellData;
   onHover?: (i: number | null) => void;
   onClick?: (i: number) => void;
-  /** paint mode: called for every cell dragged over while the mouse is down */
+  /** paint mode: called for every cell dragged over while the mouse or finger is down */
   onPaint?: (i: number, first: boolean) => void;
   hovered?: number | null;
 }
@@ -23,11 +23,13 @@ interface Props {
 export function RangeGrid({ cell, onHover, onClick, onPaint, hovered }: Props) {
   const down = useRef(false);
   const [, force] = useState(0);
+  const end = () => { if (down.current) { down.current = false; force((x) => x + 1); } };
   return (
     <div
-      className="rgrid"
-      onMouseLeave={() => { onHover?.(null); down.current = false; }}
-      onMouseUp={() => { down.current = false; force((x) => x + 1); }}
+      className={`rgrid${onPaint ? ' paint' : ''}`}
+      onPointerLeave={(e) => { if (e.pointerType === 'mouse') { onHover?.(null); end(); } }}
+      onPointerUp={end}
+      onPointerCancel={end}
     >
       {HAND_CLASSES.map((label, i) => {
         const c = cell(i);
@@ -37,8 +39,17 @@ export function RangeGrid({ cell, onHover, onClick, onPaint, hovered }: Props) {
             key={label}
             className={`rcell${hovered === i ? ' hover' : ''}${dim ? ' dim' : ''}`}
             style={c.bg ? { background: c.bg } : undefined}
-            onMouseEnter={() => { onHover?.(i); if (down.current) onPaint?.(i, false); }}
-            onMouseDown={(e) => { e.preventDefault(); if (onPaint) { down.current = true; onPaint(i, true); } }}
+            onPointerEnter={() => { onHover?.(i); if (down.current) onPaint?.(i, false); }}
+            onPointerDown={(e) => {
+              // A touch selects the hand (there is no hover on phones).
+              if (e.pointerType !== 'mouse') onHover?.(i);
+              if (!onPaint) return;
+              e.preventDefault();
+              // Touch pointers are captured by the first cell; release so dragging paints the cells under the finger.
+              if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+              down.current = true;
+              onPaint(i, true);
+            }}
             onClick={() => onClick?.(i)}
           >
             {!c.bg && (
