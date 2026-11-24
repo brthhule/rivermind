@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { HAND_CLASSES, classCombos, cardStr } from '../engine/cards';
+import { HAND_CLASSES, classCombos, cardStr, comboStr } from '../engine/cards';
 import { presetSpots } from '../engine/preflop';
 import { rangePercent, formatRange, parseRange } from '../engine/range';
 import { solverClient } from '../solver/client';
@@ -14,6 +14,7 @@ import { ActionList } from '../components/ActionList';
 import { Board, CardText, Combo } from '../components/cards';
 import { actionColors, heat } from '../components/colors';
 import { Modal } from '../components/Modal';
+import { WhyPanel } from '../components/WhyPanel';
 
 const STREETS = ['flop', 'turn', 'river'] as const;
 
@@ -215,12 +216,16 @@ function Explorer() {
   const [view, setView] = useState<'strategy' | 'ev' | 'equity'>('strategy');
   const [who, setWho] = useState<'acting' | 0 | 1>('acting');
   const [hover, setHover] = useState<number | null>(null);
+  const [pin, setPin] = useState<number | null>(null);
+  const [why, setWhy] = useState<number | null>(null);
   const [locking, setLocking] = useState(false);
   const setupNow = useSetup();
   const version = solverClient.version;
   const ready = status.state === 'done' && solverClient.hands;
 
   useEffect(() => { setPath([]); }, [version]);
+  useEffect(() => { setWhy(null); }, [path, version, who]);
+  const whyLoad = useCallback(() => solverClient.explain(path.map((s) => s.value), why ?? 0), [path, why]);
   useEffect(() => {
     if (!ready) return;
     let live = true;
@@ -255,7 +260,7 @@ function Explorer() {
     return w ? s / w : NaN;
   });
   const evMin = Math.min(...agg.ev.filter(isFinite)), evMax = Math.max(...agg.ev.filter(isFinite));
-  const go = (s: Step) => { setPath([...path, s]); setHover(null); setWho('acting'); };
+  const go = (s: Step) => { setPath([...path, s]); setHover(null); setPin(null); setWho('acting'); };
   const streetName = (n: number) => (n === 3 ? 'Flop' : n === 4 ? 'Turn' : 'River');
 
   return (
@@ -302,8 +307,9 @@ function Explorer() {
             </div>
           </div>
           <RangeGrid
-            hovered={hover}
+            hovered={hover ?? pin}
             onHover={setHover}
+            onClick={(i) => setPin(pin === i ? null : i)}
             cell={(i) => {
               const w = agg.possible[i] ? agg.reach[i] / agg.possible[i] : 0;
               if (view === 'equity' || (view === 'strategy' && !labels.length)) return { weight: w, segments: [], bg: w > 0.001 ? heat(agg.eq[i]) : undefined, sub: w > 0.001 ? `${Math.round(agg.eq[i] * 100)}` : undefined };
@@ -329,7 +335,13 @@ function Explorer() {
             {info.kind === 'action' && info.player !== p && <span className="muted small">Viewing the non-acting player's range. Switch to Acting to see the strategy.</span>}
             {labels.length > 0 && <span className="muted small">Click an action to see how the hand continues.</span>}
           </div>
-          <HandDetail info={info} p={p} hands={hands[p]} cls={hover} colors={colors} labels={labels} />
+          <HandDetail info={info} p={p} hands={hands[p]} cls={hover ?? pin} colors={colors} labels={labels} onWhy={info.kind === 'action' && info.player === p ? (i) => { setWhy(i); setPin(hands[p][i].cls); } : undefined} />
+          {why !== null && info.kind === 'action' && info.player === p && (
+            <div className="panel col">
+              <div className="row"><b>Why {comboStr(hands[p][why].c1, hands[p][why].c2)} plays this way</b><div className="spacer" /><button className="ghost" onClick={() => setWhy(null)}>✕</button></div>
+              <WhyPanel load={whyLoad} chosen={null} opp={names[1 - p]} title="Explanation" />
+            </div>
+          )}
           <div className="row">
             <button onClick={() => navigate('/trainer?mode=postflop')}>◎ Drill this spot</button>
             {info.kind === 'action' && <button onClick={() => setLocking(true)}>🔒 {info.locked ? 'Edit node lock' : 'Lock this node'}</button>}
@@ -355,8 +367,8 @@ function Explorer() {
   );
 }
 
-function HandDetail({ info, p, hands, cls, colors, labels }: { info: NodeInfo; p: 0 | 1; hands: { cls: number; c1: number; c2: number }[]; cls: number | null; colors: string[]; labels: string[] }) {
-  if (cls === null) return <div className="panel muted">Hover a hand to see each combo.</div>;
+function HandDetail({ info, p, hands, cls, colors, labels, onWhy }: { info: NodeInfo; p: 0 | 1; hands: { cls: number; c1: number; c2: number }[]; cls: number | null; colors: string[]; labels: string[]; onWhy?: (i: number) => void }) {
+  if (cls === null) return <div className="panel muted">Hover a hand to see each combo. Click it to pin it, then press ? next to a combo for an explanation.</div>;
   const n = hands.length;
   const rows = hands.map((h, i) => ({ h, i })).filter((x) => x.h.cls === cls);
   return (
@@ -364,13 +376,13 @@ function HandDetail({ info, p, hands, cls, colors, labels }: { info: NodeInfo; p
       <h2 style={{ margin: 0 }}>{HAND_CLASSES[cls]}</h2>
       {rows.length === 0 ? <span className="muted">{classCombos(HAND_CLASSES[cls]).length ? 'Not in this range, or blocked by the board.' : ''}</span> : (
         <table className="t">
-          <thead><tr><th>Combo</th><th>Weight</th>{labels.length > 0 && <th style={{ width: '40%' }}>Strategy</th>}<th>EV</th><th>Equity</th></tr></thead>
+          <thead><tr><th>Combo</th><th>Weight</th>{labels.length > 0 && <th style={{ width: '28%' }}>Strategy</th>}<th>EV</th><th>Equity</th></tr></thead>
           <tbody>
             {rows.map(({ h, i }) => {
               const r = info.reach[p][i];
               return (
                 <tr key={i} style={{ opacity: r > 0 ? 1 : 0.4 }}>
-                  <td><Combo c1={h.c1} c2={h.c2} /></td>
+                  <td style={{ whiteSpace: 'nowrap', paddingRight: 0 }}><Combo c1={h.c1} c2={h.c2} />{onWhy && r > 0 && <button className="whybtn" title="Why does this combo play this way?" aria-label="Why?" onClick={() => onWhy(i)}>?</button>}</td>
                   <td>{(r * 100).toFixed(0)}%</td>
                   {labels.length > 0 && (
                     <td title={labels.map((l, a) => `${l}: ${(info.strategy![a * n + i] * 100).toFixed(1)}% (EV ${info.actionEv![a * n + i].toFixed(2)})`).join('\n')}>

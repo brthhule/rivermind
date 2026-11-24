@@ -10,6 +10,7 @@ import { ActionList } from '../components/ActionList';
 import { HandReplayer } from '../components/HandReplayer';
 import { RangeGrid } from '../components/RangeGrid';
 import { Modal } from '../components/Modal';
+import { WhyPanel } from '../components/WhyPanel';
 
 // seat slots around the oval, clockwise starting from the hero at the bottom (x%, y%)
 const SLOTS: [number, number][] = [[50, 86], [11, 66], [11, 22], [50, 5], [89, 22], [89, 66]];
@@ -252,6 +253,7 @@ export function PracticePage() {
                   </span>
                 </div>
                 <ActionList items={hand.feedback.labels.map((l, k) => ({ label: l, color: colors[k], freq: hand.feedback!.freqs[k], ev: hand.feedback!.evs?.[k] }))} highlight={hand.feedback.chosen} />
+                {hand.feedback.explain && <WhyPanel load={hand.feedback.explain} chosen={hand.feedback.chosen} opp={hand.villainPos ?? 'Villain'} />}
                 {hand.feedback.grid && <StrategyPanel grid={hand.feedback.grid} chosen={hand.feedback.chosen} />}
               </>
             ) : hand?.status === 'hero' ? (

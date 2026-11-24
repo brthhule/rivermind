@@ -6,7 +6,7 @@ import { evaluate } from '../engine/evaluator';
 import { POSITIONS, type Pos, type HistItem, stateAfter, presetSpots } from '../engine/preflop';
 import type { Range } from '../engine/range';
 import { SolverClient } from '../solver/client';
-import type { NodeInfo, SolverConfig } from '../solver/solver';
+import type { Explanation, NodeInfo, SolverConfig } from '../solver/solver';
 import type { PlayPrefs, PlayRecord } from '../store/userData';
 
 export type Grade = 'best' | 'good' | 'inaccuracy' | 'mistake' | 'blunder';
@@ -15,7 +15,7 @@ export const GRADE_TAG: Record<Grade, string> = { best: 'good', good: 'ok', inac
 
 export interface LogEntry { street: string; who: string; text: string; grade?: Grade; evLoss?: number }
 export interface StrategyGrid { labels: string[]; strat: number[][]; reach: number[]; heroClass: number }
-export interface PendingDecision { labels: string[]; freqs: number[]; evs?: number[]; pot: number; rng: number; street: string; grid?: StrategyGrid }
+export interface PendingDecision { labels: string[]; freqs: number[]; evs?: number[]; pot: number; rng: number; street: string; grid?: StrategyGrid; explain?: () => Promise<Explanation> }
 export interface SeatState { folded: boolean; action: string; bet: number; stack: number }
 export interface ReplaySeed { seed: number; prefs: PlayPrefs }
 export interface Feedback extends PendingDecision { chosen: number; grade: Grade; evLoss: number; rngPick: number }
@@ -330,7 +330,7 @@ export class PlayHand {
       let a: number;
       if (pl === hero) {
         const evs = info.labels!.map((_, k) => info.actionEv![k * nn + idx]);
-        a = await this.heroDecision({ labels: info.labels!, freqs, evs, pot: info.pot, rng: 1 + Math.floor(this.rand() * 100), street: STREET(n), grid: gridFrom(info, hands[pl], hc) });
+        a = await this.heroDecision({ labels: info.labels!, freqs, evs, pot: info.pot, rng: 1 + Math.floor(this.rand() * 100), street: STREET(n), grid: gridFrom(info, hands[pl], hc), explain: ((at) => () => this.client.explain(at, hi))([...this.path]) });
       } else {
         a = this.sample(freqs);
         this.add({ street: STREET(n), who: names[pl], text: info.labels![a] });

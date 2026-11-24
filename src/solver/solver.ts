@@ -67,6 +67,45 @@ export interface NodeInfo {
   locked?: boolean;
 }
 
+/** How the opponent answers one of the acting player's actions (weights account for the hero's own cards). */
+export interface ActionInsight {
+  label: string;
+  /** chips this action puts in, beyond what the player already had in this street */
+  add: number;
+  /** EV of this action for the explained hand (bb) */
+  ev: number;
+  /** how often the explained hand takes it */
+  freq: number;
+  /** how often the whole range takes it */
+  rangeFreq: number;
+  /** opponent reply, if the opponent acts next: labels and range-weighted frequencies */
+  reply?: { labels: string[]; freqs: number[] };
+  /** hand's equity against the opponent hands that do not fold to it */
+  eqVsContinue?: number;
+  /** hand's equity against the opponent hands that fold to it */
+  eqVsFold?: number;
+  /** share of the range taking this action that is strong (equity >= 75%) and weak (< 35%) */
+  strongShare?: number;
+  weakShare?: number;
+}
+export interface Explanation {
+  player: 0 | 1;
+  pot: number;
+  toCall: number;
+  board: number[];
+  street: 'flop' | 'turn' | 'river';
+  hand: [number, number];
+  /** hand's equity against the opponent's whole range */
+  handEq: number;
+  /** share of the player's own range (by weight) with lower equity than this hand */
+  handPercentile: number;
+  /** average equity of each range against the other, [actor, opponent] */
+  rangeEq: [number, number];
+  /** share of each range with equity >= 75% ("very strong"), [actor, opponent] */
+  strongShare: [number, number];
+  actions: ActionInsight[];
+}
+
 export const MAX_NODES = 1_500_000;
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
@@ -665,6 +704,90 @@ export class Solver {
     } else if (node.k === 1) info.cards = node.cards;
     else info.folder = node.folder;
     return info;
+  }
+
+  /** Equity of one hand of player p against an opponent reach vector, over all runouts. */
+  private handEquity(board: number[], p: 0 | 1, h: number, reachO: Float32Array) {
+    const q = (1 - p) as 0 | 1;
+    const a = this.c1[p][h], b = this.c2[p][h];
+    const oc1 = this.c1[q], oc2 = this.c2[q];
+    let win = 0, tot = 0;
+    for (const bd of this.completions(board).list) {
+      const sh = bd.str[p][h];
+      if (sh < 0) continue;
+      const so = bd.str[q];
+      for (let o = 0; o < so.length; o++) {
+        const r = reachO[o];
+        if (!r || so[o] < 0 || oc1[o] === a || oc1[o] === b || oc2[o] === a || oc2[o] === b) continue;
+        tot += r;
+        win += sh > so[o] ? r : sh === so[o] ? r / 2 : 0;
+      }
+    }
+    return tot > 1e-12 ? win / tot : NaN;
+  }
+
+  /** Data behind a decision: range strength, the hand's standing, and how the opponent answers each action. */
+  explain(path: number[], h: number): Explanation {
+    const { node, reach } = this.walk(path);
+    if (node.k !== 0) throw new Error('Not a decision');
+    const p = node.player, q = (1 - p) as 0 | 1;
+    const hand = this.hands[p][h];
+    // opponent reach given the hero's own two cards
+    const oppR = this.chanceReach(this.chanceReach(reach[q], q, hand.c1), q, hand.c2);
+    const eqP = this.equityVec(node.board, p, reach[q]), eqQ = this.equityVec(node.board, q, reach[p]);
+    const avg = (eq: Float32Array, r: Float32Array, pred?: (x: number) => boolean) => {
+      let s = 0, w = 0;
+      for (let i = 0; i < eq.length; i++) {
+        if (!r[i] || !isFinite(eq[i])) continue;
+        w += r[i];
+        s += pred ? (pred(eq[i]) ? r[i] : 0) : eq[i] * r[i];
+      }
+      return w > 0 ? s / w : NaN;
+    };
+    const handEq = this.handEquity(node.board, p, h, oppR);
+    let below = 0, all = 0;
+    for (let i = 0; i < eqP.length; i++) if (reach[p][i] && isFinite(eqP[i])) { all += reach[p][i]; if (eqP[i] < eqP[h]) below += reach[p][i]; }
+    const sig = this.strategy(node, true);
+    const n = node.n;
+    const strong = (x: number) => x >= 0.75, weak = (x: number) => x < 0.35;
+    const toCall = node.commit[q] - node.commit[p];
+    // action EVs for the hand (same normalisation as query)
+    const half = this.cfg.pot / 2;
+    const blk = new Float32Array(n);
+    this.blocked(p, reach[q], blk, 1);
+    const actions: ActionInsight[] = node.children.map((child, a) => {
+      const v = this.cfr(child, p, reach[p], reach[q], 2);
+      const ra = Float32Array.from(reach[p], (x, i) => x * sig[a * n + i]);
+      let rs = 0, rt = 0;
+      for (let i = 0; i < n; i++) { rs += ra[i]; rt += reach[p][i]; }
+      const ins: ActionInsight = {
+        label: node.labels[a], add: r2(node.amounts[a] - node.commit[p]),
+        ev: blk[h] > 0 ? v[h] / blk[h] + half : NaN, freq: sig[a * n + h], rangeFreq: rt > 0 ? rs / rt : 0,
+        strongShare: avg(eqP, ra, strong), weakShare: avg(eqP, ra, weak),
+      };
+      if (child.k === 0 && child.player === q) {
+        const cs = this.strategy(child, true), m = child.n;
+        const freqs = child.labels.map((_, b) => { let s = 0, w = 0; for (let o = 0; o < m; o++) { w += oppR[o]; s += oppR[o] * cs[b * m + o]; } return w > 0 ? s / w : 0; });
+        ins.reply = { labels: child.labels, freqs };
+        const fi = child.labels.indexOf('Fold');
+        if (fi >= 0) {
+          const cont = Float32Array.from(oppR, (x, o) => x * (1 - cs[fi * m + o]));
+          const fold = Float32Array.from(oppR, (x, o) => x * cs[fi * m + o]);
+          ins.eqVsContinue = this.handEquity(node.board, p, h, cont);
+          ins.eqVsFold = this.handEquity(node.board, p, h, fold);
+        }
+      }
+      return ins;
+    });
+    const nb = node.board.length;
+    return {
+      player: p, pot: this.cfg.pot + node.commit[0] + node.commit[1], toCall: r2(toCall), board: node.board,
+      street: nb === 3 ? 'flop' : nb === 4 ? 'turn' : 'river', hand: [hand.c1, hand.c2],
+      handEq, handPercentile: all > 0 ? below / all : NaN,
+      rangeEq: [avg(eqP, reach[p]), avg(eqQ, reach[q])],
+      strongShare: [avg(eqP, reach[p], strong), avg(eqQ, reach[q], strong)],
+      actions,
+    };
   }
 
   describe() {

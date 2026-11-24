@@ -48,6 +48,9 @@ self.onmessage = async (e: MessageEvent) => {
       const s = new Solver(m.config);
       s.build(false);
       post({ type: 'estimate', reqId: m.reqId, nodes: s.nodes, mb: s.estimateMB() });
+    } else if (m.type === 'explain') {
+      if (!solver) throw new Error('No solution loaded');
+      post({ type: 'explain', reqId: m.reqId, info: solver.explain(m.path, m.hand) });
     } else if (m.type === 'query') {
       if (!solver) throw new Error('No solution loaded');
       const info = solver.query(m.path);

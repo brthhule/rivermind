@@ -1,4 +1,4 @@
-import type { Hand, NodeInfo, SolverConfig } from './solver';
+import type { Explanation, Hand, NodeInfo, SolverConfig } from './solver';
 
 export interface SolveStatus {
   state: 'idle' | 'building' | 'running' | 'done' | 'error';
@@ -90,6 +90,12 @@ export class SolverClient {
 
   async query(path: number[]): Promise<NodeInfo> {
     const r = await this.request<{ info: NodeInfo }>({ type: 'query', path });
+    return r.info;
+  }
+
+  /** Why-data for one hand of the acting player at the node reached by `path`. */
+  async explain(path: number[], hand: number): Promise<Explanation> {
+    const r = await this.request<{ info: Explanation }>({ type: 'explain', path, hand });
     return r.info;
   }
 
