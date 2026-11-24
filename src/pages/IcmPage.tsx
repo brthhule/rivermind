@@ -36,13 +36,13 @@ export function IcmPage() {
         <div className="col" style={{ gap: 14 }}>
           <div className="panel col">
             <h2>Table</h2>
-            <table className="t">
+            <div className="tscroll"><table className="t">
               <thead><tr><th>Player</th><th>Stack (bb)</th><th>Chip %</th><th>ICM equity</th><th>SB</th><th>BB</th><th /></tr></thead>
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={i}>
                     <td><input value={r.name} onChange={(e) => set(i, { name: e.target.value })} style={{ width: 100 }} /></td>
-                    <td><input type="number" value={r.stack} min={0} step={0.5} onChange={(e) => set(i, { stack: +e.target.value })} /></td>
+                    <td><input type="number" value={r.stack} min={0} step={0.5} style={{ width: 80 }} onChange={(e) => set(i, { stack: Math.max(0, +e.target.value || 0) })} /></td>
                     <td>{totalChips ? ((r.stack / totalChips) * 100).toFixed(1) : 0}%</td>
                     <td><b>{eq[i].toFixed(2)}</b> <span className="muted small">({prize ? ((eq[i] / prize) * 100).toFixed(1) : 0}%)</span></td>
                     <td><input type="radio" checked={sb === i} onChange={() => setSb(i)} /></td>
@@ -51,12 +51,12 @@ export function IcmPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             <div className="row">
               {rows.length < 9 && <button onClick={() => setRows([...rows, { name: `Player ${rows.length + 1}`, stack: 20 }])}>+ Add player</button>}
               <div className="spacer" />
               <label className="field">Payouts (1st, 2nd, …)<input value={payoutText} onChange={(e) => setPayoutText(e.target.value)} style={{ width: 160 }} /></label>
-              <label className="field">Ante (bb)<input type="number" step={0.025} value={ante} onChange={(e) => setAnte(Math.max(0, +e.target.value))} /></label>
+              <label className="field">Ante (bb)<input type="number" step={0.025} value={ante} onChange={(e) => setAnte(Math.max(0, Math.min(10, +e.target.value || 0)))} /></label>
             </div>
           </div>
           <div className="panel col">

@@ -38,6 +38,10 @@ function FreqBar({ labels, freqs }: { labels: string[]; freqs: number[] }) {
 }
 
 type SortKey = 'flop' | 'oopBet' | 'ipBet' | 'oopEq' | 'oopEv';
+const pct = (x: number) => (typeof x === 'number' && isFinite(x) ? `${(x * 100).toFixed(1)}%` : '–');
+const fix2 = (x: number) => (typeof x === 'number' && isFinite(x) ? x.toFixed(2) : '–');
+/** Only one report runs at a time, even if the page is left and opened again mid-run. */
+let activeRun = 0;
 
 export function ReportsPage() {
   const data = useUserData();
@@ -52,18 +56,23 @@ export function ReportsPage() {
   const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>({ k: 'flop', dir: 1 });
   const [filter, setFilter] = useState('all');
   const stop = useRef(false);
+  const [runErr, setRunErr] = useState('');
 
   const run = async () => {
-    const spot = presets.find((p) => p.name === spotName)!;
+    const spot = presets.find((p) => p.name === spotName) ?? presets[0];
     const flops = flopSubset(count);
-    const sizes = betSize.split(/[,\s]+/).map(parseFloat).filter((x) => x > 0).map((x) => x / 100);
+    const sizes = betSize.split(/[,\s]+/).map(parseFloat).filter((x) => x > 0 && x <= 1000).map((x) => x / 100);
+    if (!sizes.length) { setRunErr('Enter at least one flop bet size, like 33 or 33, 75.'); return; }
+    setRunErr('');
+    const myRun = ++activeRun;
     const s = (bet: number[]) => ({ bet, raise: [0.75] });
     stop.current = false;
     setRunning(true);
     const rows: ReportRow[] = [];
     const rep: SavedReport = { name: `${spot.name} · ${flops.length} flops`, t: Date.now(), spot: spot.name, pot: spot.pot, sizes: betSize, rows };
     setReport({ ...rep });
-    for (let i = 0; i < flops.length && !stop.current; i++) {
+    let failures = 0;
+    for (let i = 0; i < flops.length && !stop.current && activeRun === myRun; i++) {
       const f = flops[i];
       setProgress({ done: i, total: flops.length, current: f.key });
       const cfg: SolverConfig = {
@@ -73,6 +82,8 @@ export function ReportsPage() {
       };
       try {
         await reportClient.solveAsync(cfg, 120, 1.5);
+        // a stopped solve is only partly converged: leave it out of the averages
+        if (stop.current || activeRun !== myRun || reportClient.status.stopped) break;
         const root = await reportClient.query([]);
         const ipNode = await reportClient.query([0]);
         const a = rangeStats(root, 0), b = rangeStats(root, 1);
@@ -83,10 +94,16 @@ export function ReportsPage() {
           ev: [a.ev, b.ev], eq: [a.eq, b.eq],
         });
         setReport({ ...rep, rows: [...rows] });
-      } catch (e) { console.warn(e); }
+      } catch (e) {
+        if (activeRun !== myRun) break;
+        console.warn(e);
+        failures++;
+      }
     }
+    if (activeRun !== myRun) return; // a newer run took over
     setProgress((p) => ({ ...p, done: rows.length }));
     setRunning(false);
+    if (failures) setRunErr(`${failures} flop${failures === 1 ? '' : 's'} could not be solved and ${failures === 1 ? 'was' : 'were'} left out.`);
     if (rows.length) updateData((d) => { d.reports = [...d.reports.filter((r) => r.name !== rep.name), { ...rep, rows }].slice(-10); });
   };
 
@@ -101,8 +118,11 @@ export function ReportsPage() {
 
   const summary = useMemo(() => {
     if (!rows.length) return null;
-    const W = rows.reduce((s, r) => s + r.weight, 0);
-    const avg = (f: (r: (typeof rows)[number]) => number) => rows.reduce((s, r) => s + r.weight * f(r), 0) / W;
+    const avg = (f: (r: (typeof rows)[number]) => number) => {
+      let s = 0, w = 0;
+      for (const r of rows) { const v = f(r); if (isFinite(v)) { s += r.weight * v; w += r.weight; } }
+      return w ? s / w : NaN;
+    };
     const labelsO = rows[0].oop.labels, labelsI = rows[0].ip.labels;
     return {
       oop: { labels: labelsO, freqs: labelsO.map((_, i) => avg((r) => r.oop.freqs[i] ?? 0)) },
@@ -140,6 +160,7 @@ export function ReportsPage() {
           </select>
         )}
         {running && <span className="muted small">Solving {progress.done + 1} of {progress.total} ({progress.current})…</span>}
+        {runErr && !running && <span className="err small">{runErr}</span>}
       </div>
       {running && <div className="progress" style={{ marginBottom: 16 }}><div style={{ width: `${(progress.done / Math.max(1, progress.total)) * 100}%` }} /></div>}
       {report && summary && (
@@ -148,13 +169,13 @@ export function ReportsPage() {
             <h3>OOP first action, weighted average</h3>
             <FreqBar {...summary.oop} />
             <div className="row small">{summary.oop.labels.map((l, i) => <span key={i} className="chip">{l} {(summary.oop.freqs[i] * 100).toFixed(1)}%</span>)}</div>
-            <span className="small muted">OOP equity {(summary.eq[0] * 100).toFixed(1)}% · EV {summary.ev[0].toFixed(2)}bb</span>
+            <span className="small muted">OOP equity {pct(summary.eq[0])} · EV {fix2(summary.ev[0])}bb</span>
           </div>
           <div className="panel col">
             <h3>IP after a check, weighted average</h3>
             <FreqBar {...summary.ip} />
             <div className="row small">{summary.ip.labels.map((l, i) => <span key={i} className="chip">{l} {(summary.ip.freqs[i] * 100).toFixed(1)}%</span>)}</div>
-            <span className="small muted">IP equity {(summary.eq[1] * 100).toFixed(1)}% · EV {summary.ev[1].toFixed(2)}bb</span>
+            <span className="small muted">IP equity {pct(summary.eq[1])} · EV {fix2(summary.ev[1])}bb</span>
           </div>
         </div>
       )}
@@ -167,7 +188,7 @@ export function ReportsPage() {
               {['all', 'Rainbow', 'Two-tone', 'Monotone', 'paired', 'connected'].map((f) => <button key={f} className={filter === f ? 'on' : ''} onClick={() => setFilter(f)}>{f === 'all' ? 'All' : f[0].toUpperCase() + f.slice(1)}</button>)}
             </div>
           </div>
-          <table className="t">
+          <div className="tscroll"><table className="t">
             <thead><tr>{th('flop', 'Flop')}<th>Texture</th>{th('oopBet', 'OOP strategy')}{th('ipBet', 'IP vs check')}{th('oopEq', 'OOP equity')}{th('oopEv', 'OOP EV')}<th>Weight</th><th /></tr></thead>
             <tbody>
               {rows.map((r) => (
@@ -176,8 +197,8 @@ export function ReportsPage() {
                   <td className="small muted">{r.tex.suit}{r.tex.paired ? ', paired' : ''}{r.tex.connected ? ', connected' : ''}</td>
                   <td style={{ width: '22%' }}><FreqBar {...r.oop} /></td>
                   <td style={{ width: '22%' }}><FreqBar {...r.ip} /></td>
-                  <td>{(r.eq[0] * 100).toFixed(1)}%</td>
-                  <td>{r.ev[0].toFixed(2)}</td>
+                  <td>{pct(r.eq[0])}</td>
+                  <td>{fix2(r.ev[0])}</td>
                   <td className="muted small">{(r.weight / 221).toFixed(2)}%</td>
                   <td><button className="ghost" title="Open in the solver" onClick={() => {
                     if (spot) setSetup({ spotName: spot.name, oopName: spot.oop, ipName: spot.ip, oopRange: spot.oopRange, ipRange: spot.ipRange, pot: spot.pot, stack: spot.stack, board: r.flop, depth: 0, locks: [] });
@@ -187,7 +208,7 @@ export function ReportsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
           <span className="small muted">Hover a bar for exact frequencies. Click a column header to sort.</span>
         </div>
       )}

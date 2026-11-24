@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { HAND_CLASSES, classCombos, comboCount, comboStr } from '../engine/cards';
 import { POSITIONS, spot, type PreflopSpot } from '../engine/preflop';
 import { recordDrill, updateData, useUserData } from '../store/userData';
-import { solverClient } from '../solver/client';
+import { isAbort, solverClient } from '../solver/client';
 import type { NodeInfo } from '../solver/solver';
 import { useSolverStatus } from './SolverPage';
 import { useSetup } from '../store/session';
@@ -199,6 +199,7 @@ function PostflopDrill() {
   const setup = useSetup();
   const [hand, setHand] = useState<PostHand | null>(null);
   const [session, setSession] = useState({ n: 0, score: 0 });
+  const [err, setErr] = useState('');
   const ready = status.state === 'done' && !!solverClient.hands;
   const cfg = solverClient.config;
   const names = [setup.oopName || 'OOP', setup.ipName || 'IP'];
@@ -216,6 +217,7 @@ function PostflopDrill() {
     };
     const a = pick(H[0], []);
     const b = pick(H[1], [H[0][a].c1, H[0][a].c2]);
+    setErr('');
     setHand({ hero, hands: [a, b], path: [], log: [], info: null, feedback: null, done: false });
   }, [data.drills.postflopSide]);
 
@@ -244,12 +246,21 @@ function PostflopDrill() {
         return;
       }
       setHand({ ...hand, info });
-    });
+    }).catch((e) => { if (live && !isAbort(e)) setErr(e instanceof Error ? e.message : String(e)); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hand, ready]);
 
+  // keys: 1-6 pick an action, Space/Enter continues or deals the next hand
+  const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => keyRef.current(e);
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
+
   if (!ready || !cfg) {
+    keyRef.current = () => {};
     return (
       <div className="panel col">
         <h2>No solved spot yet</h2>
@@ -258,7 +269,7 @@ function PostflopDrill() {
       </div>
     );
   }
-  if (!hand) return <div className="panel muted">Dealing…</div>;
+  if (!hand) { keyRef.current = () => {}; return <div className="panel muted">Dealing…</div>; }
   const H = solverClient.hands!;
   const me = H[hand.hero][hand.hands[hand.hero]];
   const opp = H[1 - hand.hero][hand.hands[1 - hand.hero]];
@@ -272,9 +283,9 @@ function PostflopDrill() {
     const n = H[hand.hero].length, idx = hand.hands[hand.hero];
     const freqs = info.labels.map((_, k) => info.strategy![k * n + idx]);
     const evs = info.labels.map((_, k) => info.actionEv![k * n + idx]);
-    const best = Math.max(...evs);
-    const loss = Math.max(0, best - evs[a]);
-    const rel = loss / info.pot;
+    const best = Math.max(...evs.filter(isFinite));
+    const loss = isFinite(evs[a]) && isFinite(best) ? Math.max(0, best - evs[a]) : 0;
+    const rel = loss / Math.max(0.5, info.pot);
     const grade = freqs[a] >= 0.5 || rel < 0.01 ? 'good' : freqs[a] >= 0.1 || rel < 0.04 ? 'ok' : rel < 0.12 ? 'inaccuracy' : 'mistake';
     const score = Math.max(0, 1 - rel / 0.12);
     recordDrill('postflop', { t: Date.now(), spot: `${names[hand.hero]} ${board.length === 3 ? 'flop' : board.length === 4 ? 'turn' : 'river'}`, hand: comboStr(me.c1, me.c2), chosen: info.labels[a], grade, evLoss: loss }, score);
@@ -286,9 +297,20 @@ function PostflopDrill() {
     setHand({ ...hand, path: [...hand.path, hand.feedback.chosen], log: [...hand.log, `You: ${hand.feedback.labels[hand.feedback.chosen]}`], info: null, feedback: null });
   };
 
+  keyRef.current = (e: KeyboardEvent) => {
+    const el = e.target as HTMLElement | null;
+    if (e.ctrlKey || e.metaKey || e.altKey || (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+    if (myTurn && /^[1-6]$/.test(e.key)) { const a = +e.key - 1; if (a < info!.labels!.length) choose(a); }
+    else if (e.key === ' ' || e.key === 'Enter') {
+      if (hand.feedback) { e.preventDefault(); proceed(); }
+      else if (hand.done) { e.preventDefault(); deal(); }
+    }
+  };
+
   return (
     <div className="study">
       <div className="panel col" style={{ gap: 14 }}>
+        {err && <div className="err">{err} <button className="ghost" onClick={deal}>Deal a new hand</button></div>}
         <div className="row">
           <h2 style={{ margin: 0 }}>You are {hand.hero === 0 ? 'OOP' : 'IP'} ({names[hand.hero]})</h2>
           <div className="spacer" />
@@ -312,13 +334,13 @@ function PostflopDrill() {
               <span>{hand.feedback.loss < 0.005 ? 'Highest EV choice.' : `You gave up ${hand.feedback.loss.toFixed(2)}bb of EV.`}</span>
             </div>
             <ActionList items={hand.feedback.labels.map((l, k) => ({ label: l, color: colors[k], freq: hand.feedback!.freqs[k], ev: hand.feedback!.evs[k] }))} highlight={hand.feedback.chosen} />
-            <div><button className="primary" onClick={proceed}>Continue</button></div>
+            <div><button className="primary" onClick={proceed}>Continue <span className="kbd">Space</span></button></div>
           </div>
         )}
         {hand.done && (
           <div className="feedback col">
             <b>{info?.folder !== undefined && info.folder >= 0 ? `${info.folder === hand.hero ? 'You fold' : 'Opponent folds'}.` : 'Showdown.'}</b>
-            <div><button className="primary" onClick={deal}>Next hand</button></div>
+            <div><button className="primary" onClick={deal}>Next hand <span className="kbd">Space</span></button></div>
           </div>
         )}
       </div>
@@ -349,7 +371,7 @@ export function TrainerPage() {
     <div>
       <div className="page-head">
         <div>
-          <h1>Trainer</h1>
+          <h1>Spot drills</h1>
           <p>Practice decisions and get instant feedback. Keys 1 to 4 pick an action, Space moves to the next hand.</p>
         </div>
         <div className="seg">

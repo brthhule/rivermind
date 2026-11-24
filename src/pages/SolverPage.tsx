@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { HAND_CLASSES, classCombos, cardStr, comboStr } from '../engine/cards';
 import { presetSpots } from '../engine/preflop';
 import { rangePercent, formatRange, parseRange } from '../engine/range';
-import { solverClient } from '../solver/client';
+import { isAbort, solverClient } from '../solver/client';
 import type { NodeInfo } from '../solver/solver';
-import { setSetup, toConfig, useSetup, type SolverSetup } from '../store/session';
+import { defaultSetup, setSetup, toConfig, useSetup, type SizeText, type SolverSetup } from '../store/session';
 import { updateData, useUserData } from '../store/userData';
 import { RangeGrid } from '../components/RangeGrid';
 import { RangeEditor } from '../components/RangeEditor';
@@ -20,6 +20,31 @@ const STREETS = ['flop', 'turn', 'river'] as const;
 
 export function useSolverStatus() {
   return useSyncExternalStore(solverClient.subscribe, solverClient.getStatus);
+}
+
+/** Rebuild a saved (possibly imported, possibly old) setup, keeping only fields that make sense. */
+function restoreSetup(raw: unknown): SolverSetup {
+  const d = defaultSetup();
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, any>;
+  const range = (v: unknown, dflt: number[]) => typeof v === 'string' ? parseRange(v)
+    : Array.isArray(v) && v.length === 169 && v.every((x) => typeof x === 'number' && x >= 0 && x <= 1) ? v as number[] : dflt;
+  const num = (v: unknown, dflt: number, lo: number, hi: number) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : dflt);
+  const board = Array.isArray(r.board) && r.board.length >= 3 && r.board.length <= 5 && r.board.every((c: unknown) => Number.isInteger(c) && (c as number) >= 0 && (c as number) < 52) && new Set(r.board).size === r.board.length ? r.board as number[] : d.board;
+  const sizeText = (v: any, dflt: SizeText) => ({ bet: typeof v?.bet === 'string' ? v.bet : dflt.bet, raise: typeof v?.raise === 'string' ? v.raise : dflt.raise });
+  const sizes = { ...d.sizes };
+  for (const k of STREETS) { const v = r.sizes?.[k]; if (Array.isArray(v)) sizes[k] = [sizeText(v[0], d.sizes[k][0]), sizeText(v[1], d.sizes[k][1])]; }
+  return {
+    spotName: typeof r.spotName === 'string' ? r.spotName : d.spotName,
+    oopName: typeof r.oopName === 'string' ? r.oopName : d.oopName,
+    ipName: typeof r.ipName === 'string' ? r.ipName : d.ipName,
+    board, oopRange: range(r.oopRange, d.oopRange), ipRange: range(r.ipRange, d.ipRange), sizes,
+    pot: num(r.pot, d.pot, 0.5, 10000), stack: num(r.stack, d.stack, 1, 10000),
+    maxRaises: Math.round(num(r.maxRaises, d.maxRaises, 0, 4)), allIn: typeof r.allIn === 'boolean' ? r.allIn : d.allIn,
+    allInThreshold: num(r.allInThreshold, d.allInThreshold, 0, 1), depth: Math.round(num(r.depth, d.depth, 0, 2)),
+    iterations: Math.round(num(r.iterations, d.iterations, 1, 100000)), targetPct: num(r.targetPct, d.targetPct, 0, 100),
+    // locks point into a specific tree; they are not carried over from saved files
+    locks: [],
+  };
 }
 
 function SetupPanel() {
@@ -41,11 +66,13 @@ function SetupPanel() {
     setEst(null); setEstErr('');
     const t = setTimeout(() => {
       if (busy) return;
-      solverClient.estimate(toConfig({ ...st, depth })).then(setEst).catch((e) => setEstErr(e.message));
+      let cfg;
+      try { cfg = toConfig({ ...st, depth }); } catch (e) { setEstErr((e as Error).message); return; }
+      solverClient.estimate(cfg).then(setEst).catch((e) => { if (!isAbort(e)) setEstErr(e.message); });
     }, 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [st, depth]);
+  }, [st, depth, busy]);
 
   const setSize = (street: (typeof STREETS)[number], p: 0 | 1, k: 'bet' | 'raise', v: string) => {
     const sizes = structuredClone(st.sizes);
@@ -86,9 +113,9 @@ function SetupPanel() {
         <BoardPicker value={st.board} onChange={(board) => setSetup({ board })} />
       </label>
       <div className="row">
-        <label className="field">Pot (bb)<input type="number" step="0.5" value={st.pot} onChange={(e) => setSetup({ pot: Math.max(0.5, +e.target.value) })} /></label>
-        <label className="field">Stack (bb)<input type="number" step="1" value={st.stack} onChange={(e) => setSetup({ stack: Math.max(1, +e.target.value) })} /></label>
-        <label className="field">Max raises<input type="number" min={0} max={4} value={st.maxRaises} onChange={(e) => setSetup({ maxRaises: Math.max(0, Math.min(4, +e.target.value)) })} /></label>
+        <label className="field">Pot (bb)<input type="number" step="0.5" value={st.pot} onChange={(e) => setSetup({ pot: Math.max(0.5, +e.target.value || 0) })} /></label>
+        <label className="field">Stack (bb)<input type="number" step="1" value={st.stack} onChange={(e) => setSetup({ stack: Math.max(1, +e.target.value || 0) })} /></label>
+        <label className="field">Max raises<input type="number" min={0} max={4} value={st.maxRaises} onChange={(e) => setSetup({ maxRaises: Math.max(0, Math.min(4, Math.round(+e.target.value || 0))) })} /></label>
         <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 }}>
           <input type="checkbox" checked={st.allIn} onChange={(e) => setSetup({ allIn: e.target.checked })} /> All-in option
         </label>
@@ -112,8 +139,8 @@ function SetupPanel() {
         </tbody>
       </table>
       <div className="row">
-        <label className="field">Max iterations<input type="number" value={st.iterations} onChange={(e) => setSetup({ iterations: Math.max(1, +e.target.value) })} /></label>
-        <label className="field">Stop at exploitability (% pot)<input type="number" step="0.1" value={st.targetPct} onChange={(e) => setSetup({ targetPct: Math.max(0, +e.target.value) })} /></label>
+        <label className="field">Max iterations<input type="number" value={st.iterations} onChange={(e) => setSetup({ iterations: Math.max(1, Math.min(100000, Math.round(+e.target.value || 0))) })} /></label>
+        <label className="field">Stop at exploitability (% pot)<input type="number" step="0.1" value={st.targetPct} onChange={(e) => setSetup({ targetPct: Math.max(0, +e.target.value || 0) })} /></label>
       </div>
       {(st.locks ?? []).length > 0 && (
         <div className="col" style={{ gap: 6 }}>
@@ -146,8 +173,7 @@ function SetupPanel() {
           <select value="" onChange={(e) => {
             const s = data.solverSetups.find((x) => x.name === e.target.value);
             if (!s) return;
-            const raw = s.setup as SolverSetup & { oopRange: unknown; ipRange: unknown };
-            setSetup({ ...raw, oopRange: typeof raw.oopRange === 'string' ? parseRange(raw.oopRange) : (raw.oopRange as number[]), ipRange: typeof raw.ipRange === 'string' ? parseRange(raw.ipRange) : (raw.ipRange as number[]) });
+            try { setSetup(restoreSetup(s.setup)); } catch (err) { setEstErr(`Could not load "${s.name}": ${(err as Error).message}`); }
           }}>
             <option value="" disabled>Load saved…</option>
             {data.solverSetups.map((s) => <option key={s.name}>{s.name}</option>)}
@@ -211,7 +237,7 @@ function Explorer() {
   const status = useSolverStatus();
   const navigate = useNavigate();
   const [path, setPath] = useState<Step[]>([]);
-  const [info, setInfo] = useState<NodeInfo | null>(null);
+  const [loaded, setInfo] = useState<{ info: NodeInfo; v: number } | null>(null);
   const [err, setErr] = useState('');
   const [view, setView] = useState<'strategy' | 'ev' | 'equity'>('strategy');
   const [who, setWho] = useState<'acting' | 0 | 1>('acting');
@@ -222,14 +248,17 @@ function Explorer() {
   const setupNow = useSetup();
   const version = solverClient.version;
   const ready = status.state === 'done' && solverClient.hands;
+  // never render a node from an older solve against the new solve's hands
+  const info = loaded && loaded.v === version ? loaded.info : null;
 
-  useEffect(() => { setPath([]); }, [version]);
+  useEffect(() => { setPath([]); setInfo(null); setErr(''); setPin(null); setHover(null); }, [version]);
   useEffect(() => { setWhy(null); }, [path, version, who]);
   const whyLoad = useCallback(() => solverClient.explain(path.map((s) => s.value), why ?? 0), [path, why]);
   useEffect(() => {
     if (!ready) return;
     let live = true;
-    solverClient.query(path.map((s) => s.value)).then((i) => { if (live) { setInfo(i); setErr(''); } }).catch((e) => setErr(e.message));
+    const v = version;
+    solverClient.query(path.map((s) => s.value)).then((i) => { if (live) { setInfo({ info: i, v }); setErr(''); } }).catch((e) => { if (live && !isAbort(e)) setErr(e.message); });
     return () => { live = false; };
   }, [path, ready, version]);
 
@@ -240,7 +269,7 @@ function Explorer() {
       </div>
     );
   }
-  if (!info) return <div className="panel muted">Loading…</div>;
+  if (!info) return err ? <div className="panel col"><div className="err">{err}</div><div><button onClick={() => setPath([])}>Back to the start of the hand</button></div></div> : <div className="panel muted">Loading…</div>;
   const cfg = solverClient.config!;
   const hands = solverClient.hands!;
   const names = [setupNow.oopName, setupNow.ipName];

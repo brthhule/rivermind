@@ -338,7 +338,7 @@ export function stateAfter(hist: HistItem[]): PreflopState {
       else if (act.kind === 'call') return endCall(opener!, threeBettor!, spot(`vs3bet:${opener}:${threeBettor}`), 2, st.spot, 1, fourBetSize(opener!, threeBettor!));
       else return { kind: 'end', summary: `${threeBettor} folds. ${opener} wins the pot.` };
     } else if (phase === 'vs5bet') {
-      return { kind: 'end', summary: act.kind === 'call' ? 'All-in and called. Hands go to showdown.' : `${opener} folds to the all-in.` };
+      return { kind: 'end', summary: act.kind === 'call' ? 'All-in and called. Hands go to showdown.' : `${opener} folds to the all-in. ${threeBettor} wins the pot.` };
     }
   }
   return stateFor();
