@@ -12,7 +12,7 @@ import { ActionList } from '../components/ActionList';
 import { actionColors } from '../components/colors';
 import { RangeGrid } from '../components/RangeGrid';
 import { WhyPanel } from '../components/WhyPanel';
-import { preflopWhy } from '../engine/preflopWhy';
+import { PreflopWhyBox } from '../components/PreflopWhyBox';
 
 /** Solver-based explanation for the drilled hand at the current node. */
 function DrillWhy({ path, hand, chosen, opp }: { path: number[]; hand: number; chosen: number; opp: string }) {
@@ -137,11 +137,7 @@ function PreflopDrill() {
               <div className="feedback col">
                 <div className="row"><span className={`tag ${grade}`}>{gradeLabel[grade]}</span><span>You chose {q.sp.actions[answer].label}.</span></div>
                 <ActionList items={q.sp.actions.map((a, k) => ({ label: a.label, color: colors[k], freq: row[k] }))} highlight={answer} />
-                <div className="why col" style={{ gap: 6 }}>
-                  <div className="why-title">Why?</div>
-                  <ul className="why-list">{preflopWhy(q.sp, q.cls, answer).map((p, i) => <li key={i}>{p}</li>)}</ul>
-                  <span className="small muted">The full range for this spot is below.</span>
-                </div>
+                <PreflopWhyBox sp={q.sp} cls={q.cls} chosen={answer} note="The full range for this spot is below." />
                 <div className="row"><button className="primary" onClick={next}>Next hand <span className="kbd">Space</span></button></div>
               </div>
             )}

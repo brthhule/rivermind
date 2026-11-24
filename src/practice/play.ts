@@ -3,9 +3,8 @@
 // from both players' actual ranges at that point (depth-limited re-solving).
 import { HAND_CLASSES, classCombos, classOf, comboId, comboStr, CLASS_INDEX, rng as mkRng } from '../engine/cards';
 import { evaluate } from '../engine/evaluator';
-import { POSITIONS, type Pos, type HistItem, stateAfter, presetSpots } from '../engine/preflop';
+import { POSITIONS, type Pos, type HistItem, type PreflopSpot, stateAfter, presetSpots } from '../engine/preflop';
 import type { Range } from '../engine/range';
-import { preflopWhy } from '../engine/preflopWhy';
 import { isAbort, type SolverClient } from '../solver/client';
 import type { Explanation, NodeInfo, SolverConfig } from '../solver/solver';
 import type { PlayPrefs, PlayRecord } from '../store/userData';
@@ -16,7 +15,7 @@ export const GRADE_TAG: Record<Grade, string> = { best: 'good', good: 'ok', inac
 
 export interface LogEntry { street: string; who: string; text: string; grade?: Grade; evLoss?: number }
 export interface StrategyGrid { labels: string[]; strat: number[][]; reach: number[]; heroClass: number }
-export interface PendingDecision { labels: string[]; freqs: number[]; evs?: number[]; pot: number; rng: number; street: string; grid?: StrategyGrid; explain?: () => Promise<Explanation>; preWhy?: (chosen: number) => string[] }
+export interface PendingDecision { labels: string[]; freqs: number[]; evs?: number[]; pot: number; rng: number; street: string; grid?: StrategyGrid; explain?: () => Promise<Explanation>; pre?: { sp: PreflopSpot; cls: number } }
 export interface SeatState { folded: boolean; action: string; bet: number; stack: number }
 export interface ReplaySeed { seed: number; prefs: PlayPrefs }
 export interface Feedback extends PendingDecision { chosen: number; grade: Grade; evLoss: number; rngPick: number }
@@ -222,7 +221,7 @@ export class PlayHand {
       let a: number;
       if (sp.hero === this.heroPos) {
         const potNow = [...this.contrib.values()].reduce((s, x) => s + x, 0);
-        a = await this.heroDecision({ labels: sp.actions.map((x) => x.label), freqs, pot: potNow, rng: 1 + Math.floor(this.rand() * 100), street: 'Preflop', grid: { labels: sp.actions.map((x) => x.label), strat: sp.strat, reach: sp.reach, heroClass: cls }, preWhy: (ch) => preflopWhy(sp, cls, ch) });
+        a = await this.heroDecision({ labels: sp.actions.map((x) => x.label), freqs, pot: potNow, rng: 1 + Math.floor(this.rand() * 100), street: 'Preflop', grid: { labels: sp.actions.map((x) => x.label), strat: sp.strat, reach: sp.reach, heroClass: cls }, pre: { sp, cls } });
       } else {
         a = this.sample(freqs);
         if (sp.actions[a].kind !== 'fold' || this.hist.some((h) => h.action > 0)) this.add({ street: 'Preflop', who: sp.hero, text: sp.actions[a].label });

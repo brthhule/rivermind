@@ -39,6 +39,7 @@ export function WhyPanel({ load, chosen, opp, title = 'Why?' }: { load: () => Pr
   const [err, setErr] = useState<string | null>(null);
   const [more, setMore] = useState(false);
   const [eqOpen, setEqOpen] = useState(false);
+  const [details, setDetails] = useState(false);
   useEffect(() => {
     let live = true;
     setData(null); setErr(null);
@@ -51,8 +52,14 @@ export function WhyPanel({ load, chosen, opp, title = 'Why?' }: { load: () => Pr
   return (
     <div className="why col" style={{ gap: 6 }}>
       <div className="why-title">{title}</div>
-      <div className="why-head">{w.headline}</div>
-      <ul className="why-list">{w.points.map((p, i) => <li key={i}>{p}</li>)}</ul>
+      <div className="why-summary">{w.summary}</div>
+      <button className="link small" style={{ alignSelf: 'flex-start' }} onClick={() => setDetails((x) => !x)}>{details ? 'Hide details' : 'Show details'}</button>
+      {details && (
+        <>
+          <div className="why-head">{w.headline}</div>
+          <ul className="why-list">{w.points.map((p, i) => <li key={i}>{p}</li>)}</ul>
+        </>
+      )}
       <button className="link small" style={{ alignSelf: 'flex-start' }} onClick={() => setEqOpen((x) => !x)}>{eqOpen ? 'Hide equity breakdown' : `Show equity breakdown (where your ${Math.round(data.handEq * 100)}% comes from)`}</button>
       {eqOpen && <EquityBreakdown e={data} opp={opp} />}
       <button className="link small" style={{ alignSelf: 'flex-start' }} onClick={() => setMore((x) => !x)}>{more ? 'Hide numbers per action' : 'Show numbers per action'}</button>
